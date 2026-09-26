@@ -1,0 +1,12 @@
+{
+  "name": "js_runner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Jest installation for the IBM Bob sandbox",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  }
+}

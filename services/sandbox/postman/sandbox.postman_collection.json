@@ -1,0 +1,526 @@
+{
+  "info": {
+    "name": "Sandbox /run-tests",
+    "description": "Acceptance checks for services/sandbox (see SPEC.md section 6).\n\n1. Start the sandbox on port 8002.\n2. Click 'Run collection'. Every request has automatic checks.\n\nChange the baseUrl variable if your sandbox runs somewhere else.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8002"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Health check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"status is ok\", function () { pm.expect(body.status).to.eql(\"ok\"); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "02 Python - code that works",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"passed\", function () { pm.expect(body.passed).to.eql(true); });",
+              "pm.test(\"status is passed\", function () { pm.expect(body.status).to.eql(\"passed\"); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"def add(a, b):\\n    return a + b\\n\\n\\nassert add(2, 3) == 5\\nprint(\\\"ok\\\")\\n\",\n  \"target_version\": \"python3.12\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "03 Python - NameError",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"failed\", function () { pm.expect(body.passed).to.eql(false); });",
+              "pm.test(\"traceback mentions NameError\", function () { pm.expect(body.traceback).to.include(\"NameError\"); });",
+              "pm.test(\"traceback has a line number\", function () { pm.expect(body.traceback).to.match(/File \".+\", line \\d+/); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"def total(items):\\n    return sum(items)\\n\\n\\nprint(total([1, 2, 3]) + undefined_var)\\n\",\n  \"target_version\": \"python3.12\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "04 Python - infinite loop",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"status is timeout\", function () { pm.expect(body.status).to.eql(\"timeout\"); });",
+              "pm.test(\"timed_out flag set\", function () { pm.expect(body.timed_out).to.eql(true); });",
+              "pm.test(\"traceback mentions TimeoutError\", function () { pm.expect(body.traceback).to.include(\"TimeoutError\"); });",
+              "pm.test(\"answered in under 10 s (orchestrator limit)\", function () { pm.expect(pm.response.responseTime).to.be.below(10000); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"while True:\\n    pass\\n\",\n  \"target_version\": \"python3.12\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "05 Python - memory hog (1 GB)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"status is memory_exceeded\", function () { pm.expect(body.status).to.eql(\"memory_exceeded\"); });",
+              "pm.test(\"traceback mentions MemoryError\", function () { pm.expect(body.traceback).to.include(\"MemoryError\"); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"hog = bytearray(1024 * 1024 * 1024)  # tries to grab 1 GB\\nprint(len(hog))\\n\",\n  \"target_version\": \"python3.12\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "06 Python - pytest (2 pass, 1 fail)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"failed overall\", function () { pm.expect(body.passed).to.eql(false); });",
+              "pm.test(\"3 tests total\", function () { pm.expect(body.tests_total).to.eql(3); });",
+              "pm.test(\"2 passed\", function () { pm.expect(body.tests_passed).to.eql(2); });",
+              "pm.test(\"1 failed\", function () { pm.expect(body.tests_failed).to.eql(1); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"def slugify(title):\\n    return title.strip().lower().replace(\\\" \\\", \\\"-\\\")\\n\",\n  \"target_version\": \"python3.12\",\n  \"tests\": \"from submission import slugify\\n\\n\\ndef test_basic():\\n    assert slugify(\\\"Hello World\\\") == \\\"hello-world\\\"\\n\\n\\ndef test_trims_spaces():\\n    assert slugify(\\\"  Hi  \\\") == \\\"hi\\\"\\n\\n\\ndef test_removes_symbols():\\n    # Fails on purpose: slugify() keeps \\\"+\\\" and \\\"!\\\".\\n    assert slugify(\\\"C++ Rocks!\\\") == \\\"c-rocks\\\"\\n\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "07 Demo auth.py - exactly as the orchestrator sends it",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"passed (needs Flask installed in the sandbox)\", function () { pm.expect(body.passed).to.eql(true); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"# Refactored by IBM Bob 2.0 (simulated)\\n# Finding: weak password hashing (md5)\\n\\\"\\\"\\\"Legacy authentication module \\u2014 deliberately vulnerable, for demo purposes.\\n\\nContains seeded flaws for the Modernizer demo:\\n* sha256 password hashing (weak crypto)\\n* SQL injection via f-string query built from request args (taint flow)\\n\\\"\\\"\\\"\\n\\nimport hashlib\\nimport sqlite3\\n\\nfrom flask import request\\n\\n\\ndef verify_password(password: str, digest: str) -> bool:\\n    return hashlib.sha256(password.encode()).hexdigest() == digest\\n\\n\\ndef get_user(conn: sqlite3.Connection):\\n    user_id = request.args.get(\\\"id\\\")\\n    query = f\\\"SELECT * FROM users WHERE id = {user_id}\\\"\\n    conn.cursor().execute(query)\\n\",\n  \"target_version\": \"python3.12\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "08 JavaScript - code that works",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"passed\", function () { pm.expect(body.passed).to.eql(true); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"function add(a, b) {\\n  return a + b;\\n}\\n\\nif (add(2, 3) !== 5) {\\n  throw new Error(\\\"add() is broken\\\");\\n}\\nconsole.log(\\\"ok\\\");\\n\",\n  \"target_version\": \"node22\",\n  \"language\": \"javascript\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "09 JavaScript - Jest (1 pass, 1 fail)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"failed overall\", function () { pm.expect(body.passed).to.eql(false); });",
+              "pm.test(\"2 tests total\", function () { pm.expect(body.tests_total).to.eql(2); });",
+              "pm.test(\"1 failed\", function () { pm.expect(body.tests_failed).to.eql(1); });",
+              "pm.test(\"answered in under 10 s (orchestrator limit)\", function () { pm.expect(pm.response.responseTime).to.be.below(10000); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"function slugify(title) {\\n  return title.trim().toLowerCase().replace(/ /g, \\\"-\\\");\\n}\\n\\nmodule.exports = { slugify };\\n\",\n  \"target_version\": \"node22\",\n  \"language\": \"javascript\",\n  \"tests\": \"const { slugify } = require(\\\"./submission\\\");\\n\\ntest(\\\"basic\\\", () => {\\n  expect(slugify(\\\"Hello World\\\")).toBe(\\\"hello-world\\\");\\n});\\n\\ntest(\\\"removes symbols\\\", () => {\\n  // Fails on purpose: slugify() keeps \\\"+\\\" and \\\"!\\\".\\n  expect(slugify(\\\"C++ Rocks!\\\")).toBe(\\\"c-rocks\\\");\\n});\\n\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "10 JavaScript - infinite loop",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"status is timeout\", function () { pm.expect(body.status).to.eql(\"timeout\"); });",
+              "pm.test(\"answered in under 10 s (orchestrator limit)\", function () { pm.expect(pm.response.responseTime).to.be.below(10000); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"while (true) {}\\n\",\n  \"target_version\": \"node22\",\n  \"language\": \"javascript\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "11 JavaScript - memory hog",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"failed\", function () { pm.expect(body.passed).to.eql(false); });",
+              "pm.test(\"stopped by memory or time limit\", function () { pm.expect([\"memory_exceeded\", \"timeout\"]).to.include(body.status); });",
+              "pm.test(\"answered in under 10 s (orchestrator limit)\", function () { pm.expect(pm.response.responseTime).to.be.below(10000); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"const hog = [];\\nwhile (true) {\\n  hog.push(new Array(1e6).fill(1));\\n}\\n\",\n  \"target_version\": \"node22\",\n  \"language\": \"javascript\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "12 Recent runs from the database",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"returns a list\", function () { pm.expect(body).to.be.an(\"array\"); });",
+              "pm.test(\"runs were logged\", function () { pm.expect(body.length).to.be.above(0); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/runs?limit=20",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "runs"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "20"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
