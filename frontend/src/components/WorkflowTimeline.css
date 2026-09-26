@@ -1,0 +1,126 @@
+.workflow-timeline {
+  display: flex;
+  align-items: center;
+  height: var(--workflow-height);
+  padding: 0 var(--page-margin);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--surface-3);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.timeline-track {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--page-margin) + 20px);
+  right: calc(var(--page-margin) + 20px);
+  height: 2px;
+  background: var(--surface-3);
+  transform: translateY(-50%);
+  z-index: 0;
+}
+
+.timeline-fill {
+  height: 100%;
+  background: var(--accent-primary);
+  transition: width var(--transition-base);
+}
+
+.timeline-stages {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.timeline-stage {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface-1);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.stage-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--surface-4);
+  transition: all var(--transition-fast);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.stage-icon {
+  font-size: 8px;
+  line-height: 1;
+}
+
+.timeline-stage.past .stage-dot {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: white;
+}
+
+.timeline-stage.current .stage-dot {
+  background: var(--surface-0);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  border-width: 2px;
+}
+
+.stage-pulse {
+  display: none;
+}
+
+.stage-label {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  line-height: 1;
+  transition: color var(--transition-fast);
+}
+
+.timeline-stage.current .stage-label {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.timeline-stage.past .stage-label {
+  color: var(--text-secondary);
+}
+
+.timeline-stage.future {
+  opacity: 0.45;
+}
+
+@media (max-width: 1000px) {
+  .workflow-timeline {
+    height: auto;
+    padding: var(--space-xs) var(--space-base);
+    overflow-x: auto;
+  }
+  .timeline-track {
+    display: none;
+  }
+  .timeline-stages {
+    gap: var(--space-xs);
+  }
+  .stage-label {
+    display: none;
+  }
+  .timeline-stage.current .stage-label {
+    display: inline;
+  }
+}
