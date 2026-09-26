@@ -13,8 +13,8 @@ through the bus.
 Topics (pipeline lifecycle)
 ---------------------------
 ``AUDIT_STARTED`` -> ``AUDIT_FINISHED`` -> ``CVE_RETRIEVED`` ->
-``REFACTOR_PROPOSED`` -> ``CONSENSUS_REACHED`` -> ``TESTS_PASSED`` /
-``TESTS_FAILED`` -> ``HEALING_FINISHED`` -> ``PIPELINE_COMPLETE``
+``REFACTOR_PROPOSED`` -> ``CONSENSUS_REACHED`` -> ``HEALING_FINISHED`` ->
+``TESTS_PASSED`` / ``TESTS_FAILED`` -> ``PIPELINE_COMPLETE``
 
 Architecture
 ------------
@@ -54,9 +54,9 @@ class Topic(str, Enum):
     CVE_RETRIEVED = "cve.retrieved"
     REFACTOR_PROPOSED = "refactor.proposed"
     CONSENSUS_REACHED = "consensus.reached"
+    HEALING_FINISHED = "healing.finished"
     TESTS_PASSED = "tests.passed"
     TESTS_FAILED = "tests.failed"
-    HEALING_FINISHED = "healing.finished"
     PIPELINE_COMPLETE = "pipeline.complete"
 
 
