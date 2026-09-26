@@ -21,6 +21,10 @@ event bus — this module only translates HTTP <-> bus events:
         Runs the same pipeline in the background and streams every bus event
         to the browser as Server-Sent Events, in real time.
 
+Every stage is chaos-hardened: a failing subsystem degrades its refactor to
+``failed``/``rejected_*`` instead of stalling the run, and any unhandled
+error returns a safe JSON 500 (see ``chaos_monkey_tester.py`` for proof).
+
 Subsystems (same directory)
 ---------------------------
 * ``vector_cve_db.py``         — RAG security engine
@@ -32,6 +36,8 @@ Subsystems (same directory)
 * ``observability_exporter.py``— Prometheus metrics
 * ``cross_language_parser.py`` — polyglot static analysis
 * ``enterprise_auth.py``       — zero-trust JWT layer
+* ``chaos_monkey_tester.py``   — fault-injection resilience proofs
+* ``auto_doc_generator.py``    — ARCHITECTURE.md compiler
 
 Run locally
 -----------
@@ -56,7 +62,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 import httpx
 from fastapi import Depends, FastAPI, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 # --- Sibling subsystem imports (same directory on sys.path) -----------------
@@ -356,9 +362,28 @@ async def run_pipeline(request: ModernizationRequest, event_sink: "Optional[asyn
     async def on_cve_retrieved(event: Event) -> None:
         for vuln in ctx.vulnerabilities:
             original = _read_source_file(request.repo_path, vuln.file_path)
-            agent = await invoke_ibm_bob_agent(original, vuln.model_dump())
+            # Resilience: a hanging/crashing Bob API or a fatal AST parser
+            # error must degrade this refactor to 'failed' — never stall or
+            # crash the whole pipeline run.
+            try:
+                agent = await invoke_ibm_bob_agent(original, vuln.model_dump())
+            except Exception as exc:
+                ctx.logs.append(make_log(f"IBM Bob failed for {vuln.file_path}: {type(exc).__name__}: {exc}"))
+                ctx.refactors.append(RefactorResult(
+                    original_code=original, refactored_code=original,
+                    status="failed", ast_violations=[f"ibm_bob_error: {exc}"],
+                ))
+                continue
             ctx.logs.extend(agent["logs"])
-            gate: VerificationReport = verify_refactor(original, agent["refactored_code"])
+            try:
+                gate: VerificationReport = verify_refactor(original, agent["refactored_code"])
+            except Exception as exc:
+                ctx.logs.append(make_log(f"AST gate crashed for {vuln.file_path}: {type(exc).__name__}: {exc}"))
+                ctx.refactors.append(RefactorResult(
+                    original_code=original, refactored_code=agent["refactored_code"],
+                    status="rejected_ast_gate", ast_violations=[f"ast_engine_error: {exc}"],
+                ))
+                continue
             if not gate.approved:
                 ctx.refactors.append(RefactorResult(
                     original_code=original, refactored_code=agent["refactored_code"],
@@ -384,9 +409,18 @@ async def run_pipeline(request: ModernizationRequest, event_sink: "Optional[asyn
         idx = next(i for i, r in enumerate(ctx.refactors) if r.status == "proposed")
         vuln = ctx.vulnerabilities[min(idx, len(ctx.vulnerabilities) - 1)]
         debate_started = time.perf_counter()
-        result: ConsensusResult = await reach_consensus(
-            ctx.refactors[idx].original_code, ctx.refactors[idx].refactored_code, vuln.model_dump(),
-        )
+        try:
+            result: ConsensusResult = await reach_consensus(
+                ctx.refactors[idx].original_code, ctx.refactors[idx].refactored_code, vuln.model_dump(),
+            )
+        except Exception as exc:
+            # Resilience: a crashed debate = automatic rejection, never a stall.
+            ctx.logs.append(make_log(f"Consensus engine crashed for {vuln.file_path}: {exc}"))
+            ctx.refactors[idx].status = "rejected_consensus"
+            await bus.emit(Topic.CONSENSUS_REACHED, {
+                "file": vuln.file_path, "approved": False, "score": 0.0, "error": str(exc),
+            })
+            return
         debate_seconds = time.perf_counter() - debate_started
         # Metrics: debate-duration histogram (fire-and-forget).
         record_debate_duration(debate_seconds, result.approved)
@@ -412,9 +446,17 @@ async def run_pipeline(request: ModernizationRequest, event_sink: "Optional[asyn
         idx = next((i for i, r in enumerate(ctx.refactors) if r.status == "consensus_passed"), None)
         if idx is None:
             return
-        heal: HealResult = await self_heal_code(
-            ctx.refactors[idx].refactored_code, target_version=request.target_version,
-        )
+        try:
+            heal: HealResult = await self_heal_code(
+                ctx.refactors[idx].refactored_code, target_version=request.target_version,
+            )
+        except Exception as exc:
+            # Resilience: a crashing healing engine marks the refactor failed.
+            ctx.logs.append(make_log(f"Self-healing crashed for refactor {idx}: {exc}"))
+            ctx.refactors[idx].status = "failed"
+            if ctx.proposals_done and not any(r.status in pending_statuses for r in ctx.refactors):
+                await bus.emit(Topic.PIPELINE_COMPLETE, {"success": ctx.success})
+            return
         ctx.logs.extend(make_log(f"HEAL {line}") for line in heal.log)
         ctx.refactors[idx].healing_attempts = heal.total_attempts
         ctx.refactors[idx].status = "success" if heal.success else "failed"
@@ -473,6 +515,25 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 app.include_router(auth_router)
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Any, exc: Exception) -> JSONResponse:
+    """
+    Enterprise error contract: an unhandled failure NEVER hangs and NEVER
+    leaks a stack trace — the client always gets a safe HTTP 500 JSON payload
+    and the error is logged server-side for observability.
+    """
+    logger.error("Unhandled error on %s %s: %s: %s", request.method, request.url.path, type(exc).__name__, exc)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "internal_error",
+            "detail": f"{type(exc).__name__}: {exc}",
+            "safe": True,
+            "hint": "The orchestrator caught this failure gracefully; check server logs.",
+        },
+    )
+
+
 @app.get("/")
 async def root() -> Dict[str, Any]:
     return {
@@ -485,6 +546,7 @@ async def root() -> Dict[str, Any]:
             "vector_cve_db", "multi_agent_consensus", "self_healing_loop",
             "ast_mutation_engine", "master_event_bus", "roi_calculator",
             "observability_exporter", "cross_language_parser", "enterprise_auth",
+            "chaos_monkey_tester", "auto_doc_generator",
         ],
     }
 
