@@ -1,0 +1,9 @@
+.env
+.env.*
+node_modules
+js_runner/node_modules
+__pycache__
+**/__pycache__
+*.pyc
+bob_sessions
+.venv
