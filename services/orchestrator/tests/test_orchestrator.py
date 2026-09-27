@@ -163,6 +163,69 @@ class TestRoi:
 
 
 # ---------------------------------------------------------------------------
+# Language-aware gate dispatch (polyglot pipeline)
+# ---------------------------------------------------------------------------
+
+class TestLanguageAwareGate:
+    def test_tsx_patch_skips_python_ast_gate(self) -> None:
+        """A JS/TS refactor must NOT die at the Python-only AST gate."""
+        import tempfile
+        from unittest.mock import patch
+
+        tsx = 'export function Profile({ bio }) {\n  return <div dangerouslySetInnerHTML={{ __html: bio }} />;\n}\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "Login.tsx"
+            f.write_text(tsx)
+            vuln = main.VulnerabilityItem(
+                file_path="Login.tsx", line_number=2,
+                description="[JS002] dangerouslySetInnerHTML", severity="high",
+            )
+
+            # Drive the stage-3 handler through a real bus with one TSX finding.
+            async def drive() -> "main.PipelineContext":
+                async def patched_call_auditor(request, logs):
+                    return [vuln], "mock"
+
+                with patch.object(main, "call_auditor", patched_call_auditor):
+                    return await main.run_pipeline(main.ModernizationRequest(repo_path=tmp, target_version="python3.12"))
+
+            ctx = asyncio.run(drive())
+        assert len(ctx.refactors) == 1
+        # Key assertion: the TSX patch reached consensus, not an AST rejection.
+        assert ctx.refactors[0].status in {"success", "rejected_consensus", "failed"}
+        assert not any("does not parse" in v for v in ctx.refactors[0].ast_violations)
+
+    def test_python_patch_still_gated(self) -> None:
+        """Python patches still go through the AST gate (evil patch blocked)."""
+        import tempfile
+        from unittest.mock import patch
+
+        good = "def check(p):\n    return p\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "a.py"
+            f.write_text(good)
+            vuln = main.VulnerabilityItem(
+                file_path="a.py", line_number=1, description="finding", severity="low",
+            )
+
+            async def evil_bob(*args, **kwargs):
+                return {"refactored_code": good + "\nimport os\nos.system(user_input)\n",
+                        "status": "success", "logs": []}
+
+            async def patched_call_auditor(request, logs):
+                return [vuln], "mock"
+
+            async def drive() -> "main.PipelineContext":
+                with patch.object(main, "call_auditor", patched_call_auditor), \
+                     patch.object(main, "invoke_ibm_bob_agent", evil_bob):
+                    return await main.run_pipeline(main.ModernizationRequest(repo_path=tmp, target_version="python3.12"))
+
+            ctx = asyncio.run(drive())
+        assert ctx.refactors[0].status == "rejected_ast_gate"
+        assert ctx.refactors[0].ast_violations
+
+
+# ---------------------------------------------------------------------------
 # cross_language_parser
 # ---------------------------------------------------------------------------
 
