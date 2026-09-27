@@ -11,7 +11,7 @@ event bus — this module only translates HTTP <-> bus events:
     POST /api/v1/modernize  (JWT-protected)
         AUDIT_STARTED -> auditor (live/mock) -> AUDIT_FINISHED
         -> vector CVE lookup        -> CVE_RETRIEVED
-        -> IBM Bob refactor + AST gate -> REFACTOR_PROPOSED
+        -> IBM Bob refactor + language-aware AST gate -> REFACTOR_PROPOSED
         -> 3-persona debate         -> CONSENSUS_REACHED
         -> self-healing sandbox loop -> TESTS_PASSED / TESTS_FAILED
         -> PIPELINE_COMPLETE
@@ -30,11 +30,11 @@ Subsystems (same directory)
 * ``vector_cve_db.py``         — RAG security engine
 * ``multi_agent_consensus.py`` — debate & resolution engine
 * ``self_healing_loop.py``     — autonomous retry engine
-* ``ast_mutation_engine.py``   — deep structural verification
+* ``ast_mutation_engine.py``   — deep structural verification (Python)
 * ``master_event_bus.py``      — asynchronous event router
 * ``roi_calculator.py``        — business value engine
 * ``observability_exporter.py``— Prometheus metrics
-* ``cross_language_parser.py`` — polyglot static analysis
+* ``cross_language_parser.py`` — polyglot static analysis + language routing
 * ``enterprise_auth.py``       — zero-trust JWT layer
 * ``chaos_monkey_tester.py``   — fault-injection resilience proofs
 * ``auto_doc_generator.py``    — ARCHITECTURE.md compiler
@@ -83,7 +83,7 @@ from observability_exporter import (  # noqa: E402
     record_pipeline_run,
     render_metrics,
 )
-from cross_language_parser import PolyglotFinding, scan_repository  # noqa: E402
+from cross_language_parser import Language, PolyglotFinding, detect_language, scan_repository  # noqa: E402
 from enterprise_auth import EnterpriseUser, auth_router, get_current_user  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -358,7 +358,7 @@ async def run_pipeline(request: ModernizationRequest, event_sink: "Optional[asyn
 
     bus.subscribe(Topic.AUDIT_FINISHED, on_audit_finished)
 
-    # -- stage 3: IBM Bob refactor + AST gate --------------------------------
+    # -- stage 3: IBM Bob refactor + language-aware AST gate -------------------
     async def on_cve_retrieved(event: Event) -> None:
         for vuln in ctx.vulnerabilities:
             original = _read_source_file(request.repo_path, vuln.file_path)
@@ -375,6 +375,19 @@ async def run_pipeline(request: ModernizationRequest, event_sink: "Optional[asyn
                 ))
                 continue
             ctx.logs.extend(agent["logs"])
+            # Language-aware verification: the AST mutation engine is a deep
+            # *Python* analyzer. JS/TS/Java patches skip it (parsing them as
+            # Python would always fail) and proceed straight to the
+            # multi-agent debate — the polyglot regex scanner already
+            # re-validates the finding side.
+            language = detect_language(vuln.file_path, agent["refactored_code"])
+            if language is not Language.PYTHON:
+                ctx.logs.append(make_log(f"AST gate skipped for {language.value} (Python-only analyzer); proceeding to debate."))
+                ctx.refactors.append(RefactorResult(
+                    original_code=original, refactored_code=agent["refactored_code"], status="proposed",
+                ))
+                await bus.emit(Topic.REFACTOR_PROPOSED, {"file": vuln.file_path, "language": language.value})
+                continue
             try:
                 gate: VerificationReport = verify_refactor(original, agent["refactored_code"])
             except Exception as exc:
@@ -506,7 +519,7 @@ async def run_pipeline(request: ModernizationRequest, event_sink: "Optional[asyn
 
 app = FastAPI(
     title="IBM Bob 2.0 — Orchestrator",
-    version="0.3.0",
+    version="0.3.1",
     description="Bus-driven modernization pipeline: audit -> CVE RAG -> IBM Bob -> consensus -> self-heal, with zero-trust auth, ROI analytics and Prometheus metrics.",
 )
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -538,7 +551,7 @@ async def unhandled_exception_handler(request: Any, exc: Exception) -> JSONRespo
 async def root() -> Dict[str, Any]:
     return {
         "service": "ibm-bob-2.0-orchestrator",
-        "version": "0.3.0",
+        "version": "0.3.1",
         "auditor_url": AUDITOR_URL,
         "sandbox_url": SANDBOX_URL,
         "ibm_bob_mode": "cli" if IBM_BOB_CLI else "simulation",
