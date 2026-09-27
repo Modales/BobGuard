@@ -1,0 +1,213 @@
+.roi-card {
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  background: var(--surface-1);
+  border: 1px solid var(--surface-3);
+  border-radius: var(--radius-md);
+}
+
+/* ─── Header ─────────────────────────────────────────────────────────────── */
+
+.roi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.roi-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.roi-label {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.roi-heading {
+  font-size: var(--text-caption, 0.6875rem);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.roi-source-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  line-height: 1.2;
+}
+
+.badge-live {
+  color: var(--color-success);
+  background: var(--color-performance-bg);
+  border: 1px solid var(--color-performance-border);
+}
+
+.badge-demo {
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--surface-3);
+}
+
+/* ─── Metrics row ─────────────────────────────────────────────────────────── */
+
+.roi-metrics {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-bottom: var(--space-md);
+  background: var(--surface-2);
+  border: 1px solid var(--surface-3);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.roi-metric {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: var(--space-sm) var(--space-xs);
+}
+
+.roi-divider {
+  width: 1px;
+  background: var(--surface-3);
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+.roi-metric-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.roi-metric-unit {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  margin-left: 2px;
+  font-weight: 400;
+}
+
+.roi-metric-label {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+/* ─── Breakdown table ─────────────────────────────────────────────────────── */
+
+.roi-breakdown {
+  margin-bottom: var(--space-sm);
+}
+
+.roi-breakdown-title {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-xs);
+}
+
+.roi-breakdown-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.roi-breakdown-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--surface-2);
+  border-radius: var(--radius-xs);
+  border-left: 2px solid var(--surface-3);
+}
+
+.roi-breakdown-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.roi-file {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.roi-severity {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: var(--radius-xs);
+  flex-shrink: 0;
+}
+
+.sev-critical { color: var(--color-error);   background: rgba(224,85,97,0.12);  }
+.sev-high     { color: var(--color-warning);  background: rgba(212,168,67,0.12); }
+.sev-medium   { color: var(--color-info);     background: rgba(79,128,225,0.12); }
+.sev-low      { color: var(--text-muted);     background: var(--surface-3);      }
+
+.roi-breakdown-numbers {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.roi-breakdown-stat {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.roi-breakdown-sep {
+  font-size: var(--text-2xs);
+  color: var(--surface-4);
+}
+
+/* ─── Footer ─────────────────────────────────────────────────────────────── */
+
+.roi-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--surface-2);
+}
+
+.roi-rate {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.roi-analyzed {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}

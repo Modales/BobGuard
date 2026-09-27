@@ -6,6 +6,7 @@ import DiffViewer from './components/DiffViewer';
 import ExplanationPanel from './components/ExplanationPanel';
 import AgentConsensusPanel from './components/AgentConsensusPanel';
 import EventTimeline from './components/EventTimeline';
+import ROICard from './components/ROICard';
 import './App.css';
 
 function Dashboard() {
@@ -23,6 +24,7 @@ function Dashboard() {
         </section>
         <aside className="workspace-sidebar" aria-label="Review Intelligence and Consensus">
           <AgentConsensusPanel />
+          <ROICard />
           <EventTimeline />
         </aside>
       </main>

@@ -92,6 +92,38 @@
   font-size: var(--text-2xs);
 }
 
+
+/* ─── API mode badge ─────────────────────────────────────────────────────── */
+
+.api-mode-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  line-height: 1.4;
+}
+
+.mode-connecting {
+  color: var(--color-warning);
+  background: rgba(212, 168, 67, 0.12);
+  border: 1px solid rgba(212, 168, 67, 0.3);
+}
+
+.mode-live {
+  color: var(--color-success);
+  background: rgba(61, 163, 93, 0.12);
+  border: 1px solid rgba(61, 163, 93, 0.3);
+}
+
+.mode-demo {
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--surface-3);
+}
+
+
 .header-right {
   display: flex;
   align-items: center;

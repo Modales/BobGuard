@@ -1,11 +1,19 @@
 import { useReview } from '../state/ReviewContext';
 import './DashboardHeader.css';
 
+const API_MODE_LABELS = {
+  idle:       null,
+  connecting: { text: 'Connecting…', cls: 'mode-connecting' },
+  live:       { text: 'Live API',    cls: 'mode-live' },
+  demo:       { text: 'Demo Mode',   cls: 'mode-demo' },
+};
+
 export default function DashboardHeader() {
   const { state, startReview, resetReview, currentStage } = useReview();
   const { pipeline } = state.mockData;
   const isIdle = currentStage === 'idle';
   const isCompleted = currentStage === 'completed';
+  const modeBadge = API_MODE_LABELS[state.apiMode] ?? null;
 
   return (
     <header className="dashboard-header">
@@ -43,6 +51,12 @@ export default function DashboardHeader() {
                 <span className="meta-k">Duration</span>
                 <span className="meta-v mono">{pipeline.duration_ms}ms</span>
               </div>
+            </>
+          )}
+          {modeBadge && (
+            <>
+              <span className="meta-separator">•</span>
+              <span className={`api-mode-badge ${modeBadge.cls}`}>{modeBadge.text}</span>
             </>
           )}
         </div>

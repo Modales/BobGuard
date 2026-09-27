@@ -3,6 +3,7 @@
   background: var(--surface-1);
   border: 1px solid var(--surface-3);
   border-radius: var(--radius-md);
+  overflow: visible; /* override .panel-card overflow:hidden so bottom padding is never clipped */
   /* Natural height — flows directly with the sidebar so it scrolls alongside the sidebar with no trapped nested scrollbar */
 }
 
