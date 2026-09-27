@@ -9,10 +9,12 @@ const API_MODE_LABELS = {
 };
 
 export default function DashboardHeader() {
-  const { state, startReview, resetReview, currentStage } = useReview();
-  const { pipeline } = state.mockData;
+  const { state, startReview, resetReview, logout, currentStage, getActiveData, dispatch } = useReview();
+  const data = getActiveData();
+  const pipeline = data.pipeline || state.mockData.pipeline;
   const isIdle = currentStage === 'idle';
   const isCompleted = currentStage === 'completed';
+  const isLive = state.apiMode === 'live';
   const modeBadge = API_MODE_LABELS[state.apiMode] ?? null;
 
   return (
@@ -44,7 +46,7 @@ export default function DashboardHeader() {
             <span className="meta-k">Target</span>
             <span className="meta-v mono">{pipeline.target_version}</span>
           </div>
-          {isCompleted && (
+          {isCompleted && pipeline.duration_ms && (
             <>
               <span className="meta-separator">•</span>
               <div className="pipeline-meta-item">
@@ -63,12 +65,46 @@ export default function DashboardHeader() {
       </div>
 
       <div className="header-right">
+        {/* Mode badge */}
+        <span className={`mode-badge ${isLive ? 'mode-live' : 'mode-demo'}`}>
+          {isLive ? 'LIVE' : 'DEMO'}
+        </span>
+
+        {/* Sign in button when in demo mode */}
+        {!state.isAuthenticated && (
+          <button
+            className="btn-signin-link"
+            onClick={() => dispatch({ type: 'SET_API_MODE', mode: null })}
+            title="Sign in with JWT to connect to live API"
+          >
+            Sign In
+          </button>
+        )}
+
+        {/* Auth indicator */}
+        {state.isAuthenticated && (
+          <span className="auth-indicator" title={`Logged in as ${state.user?.username}`}>
+            <span className="auth-user">{state.user?.username}</span>
+            <button className="btn-logout" onClick={logout} aria-label="Log out">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                <path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M11 12l4-4-4-4M15 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </span>
+        )}
+
+        {/* Pipeline controls */}
         {isIdle ? (
-          <button className="btn-primary" onClick={startReview} id="start-review-btn">
+          <button
+            className="btn-primary"
+            onClick={startReview}
+            id="start-review-btn"
+            disabled={state.apiLoading}
+          >
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
               <path d="M4 2l10 6-10 6V2z" fill="currentColor" />
             </svg>
-            Start Review
+            {state.apiLoading ? 'Connecting…' : 'Start Review'}
           </button>
         ) : isCompleted ? (
           <button className="btn-secondary" onClick={startReview} id="replay-review-btn">
@@ -87,6 +123,13 @@ export default function DashboardHeader() {
           </button>
         )}
       </div>
+
+      {/* API error display */}
+      {state.apiError && (
+        <div className="header-error" role="alert">
+          {state.apiError}
+        </div>
+      )}
     </header>
   );
 }

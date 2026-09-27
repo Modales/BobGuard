@@ -3,8 +3,10 @@ import AgentCard from './AgentCard';
 import './AgentConsensusPanel.css';
 
 export default function AgentConsensusPanel() {
-  const { state, currentStage } = useReview();
-  const { agents, consensus } = state.mockData;
+  const { state, currentStage, getActiveData } = useReview();
+  const data = getActiveData();
+  const agents = data.agents || [];
+  const consensus = data.consensus || [];
 
   const consensusData = consensus.find(
     (c) => c.vulnerabilityId === state.selectedVulnerabilityId
