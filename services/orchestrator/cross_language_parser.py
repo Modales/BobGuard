@@ -110,7 +110,7 @@ _JS_TS_RULES: List[Tuple[str, str, re.Pattern[str], str]] = [
 _JAVA_RULES: List[Tuple[str, str, re.Pattern[str], str]] = [
     ("JV001", "critical", re.compile(r"\bRuntime\.getRuntime\(\)\.exec\s*\("), "Runtime.exec() — command injection risk."),
     ("JV002", "high", re.compile(r"MessageDigest\.getInstance\(['\"](?:MD5|SHA-1)['\"]\)"), "Weak hash algorithm (MD5/SHA-1)."),
-    ("JV003", "high", re.compile(r"""(?:password|secret|apiKey)\s*=\s*"[A-Za-z0-9_\-]{8,}"""", re.IGNORECASE), "Hardcoded credential in source."),
+    ("JV003", "high", re.compile(r'''(?:password|secret|apiKey)\s*=\s*"[A-Za-z0-9_\-]{8,}"''', re.IGNORECASE), "Hardcoded credential in source."),
     ("JV004", "high", re.compile(r"Statement\s+\w+\s*=.*createStatement\(\).*(?:\+|\bexecuteQuery\s*\(\s*\"[^\"]*\"\s*\+)"), "Possible SQL injection via string-built Statement."),
     ("JV005", "medium", re.compile(r"new\s+ObjectInputStream\s*\("), "Java deserialization — untrusted object stream risk."),
     ("JV006", "low", re.compile(r"\bSystem\.out\.println\s*\("), "System.out.println left in code — use a logger."),
