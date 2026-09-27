@@ -1,0 +1,82 @@
+{
+  "repo_path": "./demo/legacy-app",
+  "target_version": "python3.12",
+  "auditor_source": "mock",
+  "sandbox_source": "mock",
+  "note": "Recorded by demo/live_snapshot.py — a byte-exact real ModernizationResponse. Event ids, timestamps and scores vary run to run; shapes are the contract.",
+  "_shape": {
+    "vulnerabilities": [{"file_path": "str", "line_number": "int", "description": "str", "severity": "critical|high|medium|low"}],
+    "cve_hits": [{"cve_id": "str", "package": "str", "severity": "str", "score": "float", "fixed_version": "str|null"}],
+    "refactors": [{"original_code": "str", "refactored_code": "str", "status": "success|rejected_consensus|rejected_ast_gate|failed", "consensus_score": "float|null", "ast_violations": "str[]", "healing_attempts": "int|null", "loop_depth_before": "int", "loop_depth_after": "int"}],
+    "sandbox_report": {"healing_success": "bool", "attempts": [{"attempt": "int", "sandbox_passed": "bool", "sandbox_source": "live|mock", "exception_type": "str|null", "fix_applied": "bool", "ast_gate_passed": "bool|null", "note": "str"}]},
+    "roi_summary": {"total_hours_saved": "float", "total_cost_saved_usd": "float", "total_carbon_kg_co2e_per_year": "float", "refactors_analyzed": "int", "hourly_rate_usd": "float", "assumptions": "object", "breakdown": "array"},
+    "pipeline_success": "bool",
+    "execution_logs": "str[]",
+    "event_timeline": "str[]",
+    "duration_ms": "int"
+  },
+  "vulnerabilities": [
+    {"file_path": "src/legacy/auth.py", "line_number": 42, "description": "Use of deprecated md5 hash for password verification.", "severity": "critical"},
+    {"file_path": "src/legacy/db.py", "line_number": 17, "description": "SQL query built via string concatenation (possible injection).", "severity": "high"},
+    {"file_path": "demo/legacy-app/app/auth.py", "line_number": 15, "description": "[PY003] Weak hash algorithm (md5/sha1).", "severity": "high"},
+    {"file_path": "demo/legacy-app/app/report.py", "line_number": 9, "description": "[PY005] Shell execution risk.", "severity": "medium"},
+    {"file_path": "demo/legacy-app/app/report.py", "line_number": 13, "description": "[PY005] Shell execution risk.", "severity": "medium"},
+    {"file_path": "demo/legacy-app/web/Login.tsx", "line_number": 9, "description": "[JS001] Use of eval() — arbitrary code execution risk.", "severity": "critical"},
+    {"file_path": "demo/legacy-app/web/Login.tsx", "line_number": 13, "description": "[JS002] React dangerouslySetInnerHTML — potential XSS sink.", "severity": "high"},
+    {"file_path": "demo/legacy-app/web/Login.tsx", "line_number": 2, "description": "[JS003] Hardcoded API key/secret in source.", "severity": "high"},
+    {"file_path": "demo/legacy-app/web/Login.tsx", "line_number": 5, "description": "[JS004] Direct innerHTML assignment — potential DOM XSS.", "severity": "medium"},
+    {"file_path": "demo/legacy-app/legacy/BatchJob.java", "line_number": 7, "description": "[JV001] Runtime.exec() — command injection risk.", "severity": "critical"},
+    {"file_path": "demo/legacy-app/legacy/BatchJob.java", "line_number": 11, "description": "[JV002] Weak hash algorithm (MD5/SHA-1).", "severity": "high"}
+  ],
+  "cve_hits": [
+    {"cve_id": "CVE-2023-32681", "package": "requests", "severity": "medium", "score": 0.205, "fixed_version": "2.31.0"},
+    {"cve_id": "CVE-2024-35195", "package": "requests", "severity": "medium", "score": 0.097, "fixed_version": "2.32.0"},
+    {"cve_id": "CVE-2023-0286", "package": "cryptography", "severity": "high", "score": 0.1059, "fixed_version": "39.0.1"},
+    {"cve_id": "CVE-2024-26130", "package": "cryptography", "severity": "high", "score": 0.1011, "fixed_version": "42.0.4"}
+  ],
+  "refactors": [
+    {
+      "original_code": "import hashlib\n\ndef verify_password(password: str, digest: str) -> bool:\n    return hashlib.md5(password.encode()).hexdigest() == digest\n",
+      "refactored_code": "# Refactored by IBM Bob 2.0 (simulated)\n# Finding: Use of deprecated md5 hash for password verification.\nimport hashlib\n\ndef verify_password(password: str, digest: str) -> bool:\n    return hashlib.sha256(password.encode()).hexdigest() == digest\n",
+      "status": "rejected_consensus",
+      "consensus_score": 0.65,
+      "ast_violations": [],
+      "healing_attempts": null,
+      "loop_depth_before": 0,
+      "loop_depth_after": 0
+    },
+    {
+      "original_code": "import hashlib\n\ndef verify_password(password: str, digest: str) -> bool:\n    return hashlib.md5(password.encode()).hexdigest() == digest\n",
+      "refactored_code": "# Refactored by IBM Bob 2.0 (simulated)\n# Finding: SQL query built via string concatenation (possible injection).\nimport hashlib\n\ndef verify_password(password: str, digest: str) -> bool:\n    return hashlib.sha256(password.encode()).hexdigest() == digest\n",
+      "status": "success",
+      "consensus_score": 0.85,
+      "ast_violations": [],
+      "healing_attempts": 1,
+      "loop_depth_before": 0,
+      "loop_depth_after": 0
+    }
+  ],
+  "sandbox_report": {
+    "healing_success": true,
+    "attempts": [
+      {"attempt": 1, "sandbox_passed": true, "sandbox_source": "mock", "exception_type": null, "fix_applied": false, "ast_gate_passed": null, "note": "passed"}
+    ]
+  },
+  "pipeline_success": true,
+  "execution_logs": [
+    "[07:40:21] Scanning files... POST http://localhost:8001/scan-repo",
+    "[07:40:21] Auditor unreachable (ConnectError); using internal mock scan.",
+    "[07:40:21] Polyglot scanner added 9 finding(s) from ./demo/legacy-app.",
+    "[07:40:21] Mock scan complete: 11 finding(s)."
+  ],
+  "event_timeline": [
+    "audit.started [da928245e1db]",
+    "audit.finished [eb6966dcc9af]",
+    "cve.retrieved [31999200bcb7]",
+    "refactor.proposed [f48cd9769889]",
+    "consensus.reached [e57528d71201]",
+    "healing.finished [6e29f384fe30]",
+    "tests.passed [8d7434a17819]",
+    "pipeline.complete [6fe66f9519d9]"
+  ]
+}
