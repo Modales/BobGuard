@@ -1,0 +1,22 @@
+{
+  "vuln_01_sql_fstring.py":           "vulnerable",
+  "vuln_02_sql_assigned_execute.py":  "vulnerable",
+  "vuln_03_os_system_tainted.py":     "vulnerable",
+  "vuln_04_eval_tainted.py":          "vulnerable",
+  "vuln_05_request_json_to_execute.py": "vulnerable",
+  "vuln_06_sql_format_method.py":     "vulnerable",
+  "vuln_07_os_system_fstring.py":     "vulnerable",
+  "vuln_08_eval_fstring.py":          "vulnerable",
+  "vuln_09_sql_percent_format.py":    "vulnerable",
+  "vuln_10_request_json_os_system.py": "vulnerable",
+  "safe_01_parameterized_query.py":   "safe",
+  "safe_02_hardcoded_query.py":       "safe",
+  "safe_03_sanitized_input.py":       "safe",
+  "safe_04_os_system_hardcoded.py":   "safe",
+  "safe_05_eval_hardcoded.py":        "safe",
+  "safe_06_request_json_parameterized.py": "safe",
+  "safe_07_whitelist_validated.py":   "safe",
+  "safe_08_parameterized_psycopg2.py": "safe",
+  "safe_09_no_dangerous_sink.py":     "safe",
+  "safe_10_reassigned_sanitized.py":  "safe"
+}
