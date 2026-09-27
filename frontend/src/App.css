@@ -1,0 +1,73 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   App Layout — Professional Developer Workspace Grid
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dashboard {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-0);
+}
+
+.dashboard-top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--surface-1);
+}
+
+.dashboard-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(360px, 1fr);
+  gap: var(--space-base);
+  padding: var(--space-base) var(--page-margin) var(--space-2xl);
+  flex: 1;
+  align-items: start;
+  max-width: 1920px;
+  width: 100%;
+  margin: 0 auto;
+  min-width: 0;
+}
+
+.workspace-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.workspace-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-base);
+  min-width: 0;
+  position: sticky;
+  top: calc(var(--header-height) + var(--workflow-height) + var(--space-base));
+  max-height: calc(100vh - var(--header-height) - var(--workflow-height) - var(--space-base) * 2);
+  overflow-y: auto;
+  padding-right: 4px;
+  padding-bottom: var(--space-xl);
+  overscroll-behavior: contain;
+}
+
+/* ─── Responsive Layout ──────────────────────────────────────────────────── */
+
+@media (max-width: 1200px) {
+  .dashboard-main {
+    grid-template-columns: 1fr;
+    padding: var(--space-md) var(--space-base) var(--space-xl);
+    gap: var(--space-md);
+  }
+
+  .workspace-sidebar {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+    padding-bottom: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-main {
+    padding: var(--space-sm) var(--space-sm) var(--space-lg);
+  }
+}

@@ -1,0 +1,549 @@
+{
+  "pipeline": {
+    "repo_path": "src/legacy",
+    "target_version": "python3.12",
+    "status": "completed",
+    "duration_ms": 2340,
+    "auditor_source": "mock",
+    "sandbox_source": "mock"
+  },
+  "vulnerabilities": [
+    {
+      "id": "vuln-1",
+      "file_path": "src/legacy/auth.py",
+      "line_number": 42,
+      "description": "Use of deprecated md5 hash for password verification.",
+      "severity": "critical"
+    },
+    {
+      "id": "vuln-2",
+      "file_path": "src/legacy/db.py",
+      "line_number": 17,
+      "description": "SQL query built via string concatenation (possible injection).",
+      "severity": "high"
+    }
+  ],
+  "cve_hits": [
+    {
+      "cve_id": "CVE-2024-35195",
+      "package": "requests",
+      "affected_versions": "<2.32.0",
+      "severity": "medium",
+      "description": "Requests leaks Proxy-Authorization headers to destination servers during redirects.",
+      "fixed_version": "2.32.0",
+      "score": 0.8421
+    },
+    {
+      "cve_id": "CVE-2023-0286",
+      "package": "cryptography",
+      "affected_versions": "<39.0.1",
+      "severity": "high",
+      "description": "Type confusion in X.400 address processing inside X.509 GeneralName.",
+      "fixed_version": "39.0.1",
+      "score": 0.7893
+    }
+  ],
+  "agents": [
+    {
+      "id": "security_expert",
+      "name": "Security Expert",
+      "weight": 0.5,
+      "description": "Staff application-security engineer. Reviews patches for vulnerability remediation, eval/exec/injection, hardcoded secrets, and crypto weaknesses.",
+      "focus": "security",
+      "critiques": [
+        {
+          "vulnerabilityId": "vuln-1",
+          "round": 1,
+          "score": 0.85,
+          "verdict": "approve",
+          "concerns": [],
+          "suggestions": ["Weak cryptography removed; consider adding a constant-time compare."]
+        },
+        {
+          "vulnerabilityId": "vuln-2",
+          "round": 1,
+          "score": 0.35,
+          "verdict": "reject",
+          "concerns": ["Patch introduces parameterized queries but does not sanitize dynamic table names.", "Connection string still uses plaintext credentials."],
+          "suggestions": ["Use environment variables for DB credentials.", "Add input validation for table name parameter."]
+        }
+      ]
+    },
+    {
+      "id": "performance_guru",
+      "name": "Performance Guru",
+      "weight": 0.25,
+      "description": "Performance engineer. Reviews patches for algorithmic regressions, redundant work in hot paths, blocking I/O, and memory blowups.",
+      "focus": "performance",
+      "critiques": [
+        {
+          "vulnerabilityId": "vuln-1",
+          "round": 1,
+          "score": 0.85,
+          "verdict": "approve",
+          "concerns": [],
+          "suggestions": ["No measurable performance regression in the diff."]
+        },
+        {
+          "vulnerabilityId": "vuln-2",
+          "round": 1,
+          "score": 0.70,
+          "verdict": "approve",
+          "concerns": ["Parameterized queries add slight overhead per call due to prepared statement caching."],
+          "suggestions": ["Consider connection pooling to offset parameterization overhead."]
+        }
+      ]
+    },
+    {
+      "id": "legacy_maintainer",
+      "name": "Legacy Maintainer",
+      "weight": 0.25,
+      "description": "Long-time codebase maintainer. Reviews patches for minimality, readability, style consistency, and backwards compatibility.",
+      "focus": "compatibility",
+      "critiques": [
+        {
+          "vulnerabilityId": "vuln-1",
+          "round": 1,
+          "score": 0.85,
+          "verdict": "approve",
+          "concerns": [],
+          "suggestions": ["Change is minimal and stylistically consistent."]
+        },
+        {
+          "vulnerabilityId": "vuln-2",
+          "round": 1,
+          "score": 0.60,
+          "verdict": "revise",
+          "concerns": ["Patch leaves TODO/FIXME markers behind."],
+          "suggestions": ["Remove TODO markers before merging.", "Add backward-compatible wrapper for callers using old API."]
+        }
+      ]
+    }
+  ],
+  "consensus": [
+    {
+      "vulnerabilityId": "vuln-1",
+      "approved": true,
+      "consensus_score": 0.85,
+      "security_score": 0.85,
+      "security_vetoed": false,
+      "approval_threshold": 0.70,
+      "security_veto_threshold": 0.60,
+      "rounds": 1,
+      "transcript": [
+        "Debate opened for finding: Use of deprecated md5 hash for password verification.",
+        "--- Debate round 1: 3 personas reviewing patch ---",
+        "[security_expert] score=0.85 verdict=approve concerns=0 suggestions=1",
+        "[performance_guru] score=0.85 verdict=approve concerns=0 suggestions=1",
+        "[legacy_maintainer] score=0.85 verdict=approve concerns=0 suggestions=1",
+        "Round 1 consensus=0.850 security=0.850",
+        "Decision: APPROVED (consensus=0.850, threshold=0.70, security=0.850, veto_threshold=0.60)"
+      ]
+    },
+    {
+      "vulnerabilityId": "vuln-2",
+      "approved": false,
+      "consensus_score": 0.5125,
+      "security_score": 0.35,
+      "security_vetoed": true,
+      "approval_threshold": 0.70,
+      "security_veto_threshold": 0.60,
+      "rounds": 1,
+      "transcript": [
+        "Debate opened for finding: SQL query built via string concatenation (possible injection).",
+        "--- Debate round 1: 3 personas reviewing patch ---",
+        "[security_expert] score=0.35 verdict=reject concerns=2 suggestions=2",
+        "[performance_guru] score=0.70 verdict=approve concerns=1 suggestions=1",
+        "[legacy_maintainer] score=0.60 verdict=revise concerns=1 suggestions=2",
+        "Round 1 consensus=0.513 security=0.350",
+        "Decision: REJECTED (consensus=0.513, threshold=0.70, security=0.350, veto_threshold=0.60)"
+      ]
+    }
+  ],
+  "refactors": [
+    {
+      "vulnerabilityId": "vuln-1",
+      "status": "success",
+      "consensus_score": 0.85,
+      "ast_violations": [],
+      "healing_attempts": 2,
+      "loop_depth_before": 0,
+      "loop_depth_after": 0,
+      "original_code": "import hashlib\n\ndef verify_password(password: str, digest: str) -> bool:\n    \"\"\"Check a password against its stored hash.\"\"\"\n    return hashlib.md5(password.encode()).hexdigest() == digest\n\ndef hash_password(password: str) -> str:\n    \"\"\"Hash a new password for storage.\"\"\"\n    return hashlib.md5(password.encode()).hexdigest()\n\ndef validate_token(token: str, secret: str) -> bool:\n    \"\"\"Validate an API token using md5 signature.\"\"\"\n    expected = hashlib.md5(secret.encode()).hexdigest()\n    return token == expected",
+      "refactored_code": "import hashlib\n\ndef verify_password(password: str, digest: str) -> bool:\n    \"\"\"Check a password against its stored hash.\"\"\"\n    return hashlib.sha256(password.encode()).hexdigest() == digest\n\ndef hash_password(password: str) -> str:\n    \"\"\"Hash a new password for storage.\"\"\"\n    return hashlib.sha256(password.encode()).hexdigest()\n\ndef validate_token(token: str, secret: str) -> bool:\n    \"\"\"Validate an API token using sha256 signature.\"\"\"\n    expected = hashlib.sha256(secret.encode()).hexdigest()\n    return token == expected"
+    },
+    {
+      "vulnerabilityId": "vuln-2",
+      "status": "rejected_consensus",
+      "consensus_score": 0.5125,
+      "ast_violations": [],
+      "healing_attempts": 0,
+      "loop_depth_before": 1,
+      "loop_depth_after": 1,
+      "original_code": "import sqlite3\n\ndef get_user(db_path: str, username: str) -> dict:\n    \"\"\"Fetch user record by username.\"\"\"\n    conn = sqlite3.connect(db_path)\n    cursor = conn.cursor()\n    query = \"SELECT * FROM users WHERE username = '\" + username + \"'\"\n    cursor.execute(query)\n    row = cursor.fetchone()\n    conn.close()\n    return dict(row) if row else {}\n\ndef search_users(db_path: str, term: str) -> list:\n    \"\"\"Search users by partial name match.\"\"\"\n    conn = sqlite3.connect(db_path)\n    cursor = conn.cursor()\n    query = \"SELECT * FROM users WHERE name LIKE '%\" + term + \"%'\"\n    cursor.execute(query)\n    rows = cursor.fetchall()\n    conn.close()\n    return [dict(r) for r in rows]",
+      "refactored_code": "import sqlite3\n\ndef get_user(db_path: str, username: str) -> dict:\n    \"\"\"Fetch user record by username.\"\"\"\n    conn = sqlite3.connect(db_path)\n    cursor = conn.cursor()\n    # TODO: validate db_path origin\n    query = \"SELECT * FROM users WHERE username = ?\"\n    cursor.execute(query, (username,))\n    row = cursor.fetchone()\n    conn.close()\n    return dict(row) if row else {}\n\ndef search_users(db_path: str, term: str) -> list:\n    \"\"\"Search users by partial name match.\"\"\"\n    conn = sqlite3.connect(db_path)\n    cursor = conn.cursor()\n    # FIXME: sanitize dynamic table references\n    query = \"SELECT * FROM users WHERE name LIKE ?\"\n    cursor.execute(query, (f'%{term}%',))\n    rows = cursor.fetchall()\n    conn.close()\n    return [dict(r) for r in rows]"
+    }
+  ],
+  "healing": [
+    {
+      "vulnerabilityId": "vuln-1",
+      "success": true,
+      "total_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "sandbox_passed": false,
+          "sandbox_source": "mock",
+          "exception_type": "SecurityError",
+          "fix_applied": true,
+          "ast_gate_passed": true,
+          "note": "md5 blocked by policy — applied sha256 fix"
+        },
+        {
+          "attempt": 2,
+          "sandbox_passed": true,
+          "sandbox_source": "mock",
+          "exception_type": null,
+          "fix_applied": false,
+          "ast_gate_passed": null,
+          "note": "passed"
+        }
+      ],
+      "log": [
+        "Self-healing started (max_retries=5).",
+        "Attempt 1/5: submitting to sandbox...",
+        "Attempt 1: FAILED with SecurityError at submission.py:3",
+        "Attempt 1: candidate accepted (AST gate OK); re-testing.",
+        "Attempt 2/5: submitting to sandbox...",
+        "Attempt 2: PASSED (mock sandbox)."
+      ]
+    }
+  ],
+  "roi_summary": {
+    "total_hours_saved": 21.58,
+    "total_cost_saved_usd": 2050.10,
+    "total_carbon_kg_co2e_per_year": 0.0,
+    "refactors_analyzed": 1,
+    "hourly_rate_usd": 95.0,
+    "breakdown": [
+      {
+        "file_hint": "src/legacy/auth.py",
+        "lines_changed": 6,
+        "severity": "critical",
+        "loop_depth_before": 0,
+        "loop_depth_after": 0,
+        "hours_saved": 21.58,
+        "cost_saved_usd": 2050.10,
+        "carbon_kg_co2e_per_year": 0.0
+      }
+    ]
+  },
+  "event_timeline": [
+    { "topic": "audit.started", "message": "Scanning repository files...", "level": "info" },
+    { "topic": "audit.finished", "message": "Audit complete: 2 finding(s) detected.", "level": "info" },
+    { "topic": "cve.retrieved", "message": "CVE database: 2 relevant advisories retrieved.", "level": "info" },
+    { "topic": "refactor.proposed", "message": "IBM Bob proposed patch for src/legacy/auth.py", "level": "info" },
+    { "topic": "consensus.reached", "message": "Consensus APPROVED for auth.py (score=0.850).", "level": "success" },
+    { "topic": "healing.finished", "message": "Self-healing finished (attempts=2).", "level": "info" },
+    { "topic": "tests.passed", "message": "Sandbox tests: 12/12 PASSED.", "level": "success" },
+    { "topic": "refactor.proposed", "message": "IBM Bob proposed patch for src/legacy/db.py", "level": "info" },
+    { "topic": "consensus.reached", "message": "Consensus REJECTED for db.py — security veto (score=0.350).", "level": "error" },
+    { "topic": "pipeline.complete", "message": "Pipeline complete. 1 approved, 1 rejected.", "level": "info" }
+  ],
+  "lineExplanations": {
+    "vuln-1": {
+      "5": {
+        "content": "hashlib.md5(...) → hashlib.sha256(...)",
+        "explanation": "MD5 is cryptographically broken — practical collisions can be generated in seconds. SHA-256 provides 128-bit collision resistance, satisfying NIST SP 800-131A standards for password digest verification.",
+        "agents": ["security_expert", "performance_guru"],
+        "severity": "critical",
+        "category": "security",
+        "consensus_score": 0.85,
+        "consensus_verdict": "approve",
+        "agent_critiques": {
+          "security_expert": {
+            "score": 0.85,
+            "verdict": "approve",
+            "reasoning": "Removes legacy MD5 algorithm completely. Eliminates trivial hash collision attacks against user credential tables.",
+            "suggestions": ["Consider adding hmac.compare_digest for constant-time comparison against timing attacks."]
+          },
+          "performance_guru": {
+            "score": 0.85,
+            "verdict": "approve",
+            "reasoning": "SHA-256 CPU instruction overhead is negligible (<0.01ms per verification call) in modern x86/ARM hardware.",
+            "suggestions": ["No hot-path caching changes needed."]
+          },
+          "legacy_maintainer": {
+            "score": 0.85,
+            "verdict": "approve",
+            "reasoning": "Signature of verify_password remains 100% backwards-compatible with existing caller contracts.",
+            "suggestions": ["Ensure DB migrations convert historical digests if legacy records exist."]
+          }
+        }
+      },
+      "9": {
+        "content": "hashlib.md5(...) → hashlib.sha256(...)",
+        "explanation": "The hash_password function computes digests for new user records. Using MD5 stores insecure digests that are vulnerable to rainbow table lookups. Migrating to SHA-256 enforces modern digest security.",
+        "agents": ["security_expert", "legacy_maintainer"],
+        "severity": "critical",
+        "category": "security",
+        "consensus_score": 0.85,
+        "consensus_verdict": "approve",
+        "agent_critiques": {
+          "security_expert": {
+            "score": 0.85,
+            "verdict": "approve",
+            "reasoning": "Pre-computes secure digests for new credentials, stopping credential exposure at registration time.",
+            "suggestions": ["Next iteration should incorporate salt or Argon2id/bcrypt for at-rest password storage."]
+          },
+          "performance_guru": {
+            "score": 0.85,
+            "verdict": "approve",
+            "reasoning": "Throughput remains optimal under registration load tests.",
+            "suggestions": ["Keep asynchronous password hashing if registration becomes a bottleneck."]
+          },
+          "legacy_maintainer": {
+            "score": 0.85,
+            "verdict": "approve",
+            "reasoning": "Clean drop-in replacement. Preserves hex string return format.",
+            "suggestions": ["Document the new 64-character hash length expectation in API schema."]
+          }
+        }
+      },
+      "12": {
+        "content": "Docstring: md5 signature → sha256 signature",
+        "explanation": "Updates internal documentation and contract specifications to accurately describe SHA-256 cryptographic guarantees.",
+        "agents": ["legacy_maintainer"],
+        "severity": "low",
+        "category": "documentation",
+        "consensus_score": 0.90,
+        "consensus_verdict": "approve",
+        "agent_critiques": {
+          "security_expert": {
+            "score": 0.90,
+            "verdict": "approve",
+            "reasoning": "Documentation correctly reflects the updated cryptographic primitive.",
+            "suggestions": []
+          },
+          "performance_guru": {
+            "score": 0.90,
+            "verdict": "approve",
+            "reasoning": "Docstring update has zero runtime overhead.",
+            "suggestions": []
+          },
+          "legacy_maintainer": {
+            "score": 0.95,
+            "verdict": "approve",
+            "reasoning": "Clear docstring update preserves code clarity and prevents team confusion.",
+            "suggestions": ["Keep docstrings synchronized with external OpenAPI specs."]
+          }
+        }
+      },
+      "13": {
+        "content": "expected = hashlib.md5(...) → hashlib.sha256(...)",
+        "explanation": "API token validation using MD5 permits token forgery via length-extension and collision vulnerabilities. SHA-256 guarantees signature uniqueness.",
+        "agents": ["security_expert", "performance_guru"],
+        "severity": "critical",
+        "category": "security",
+        "consensus_score": 0.85,
+        "consensus_verdict": "approve",
+        "agent_critiques": {
+          "security_expert": {
+            "score": 0.85,
+            "verdict": "approve",
+            "reasoning": "Token forgery risk is mitigated. Cryptographic integrity of API communication is restored.",
+            "suggestions": ["Transition to HMAC-SHA256 for cryptographic authentication."]
+          },
+          "performance_guru": {
+            "score": 0.85,
+            "verdict": "approve",
+            "reasoning": "Zero throughput impact on high-concurrency API token validation microbenchmarks.",
+            "suggestions": []
+          },
+          "legacy_maintainer": {
+            "score": 0.85,
+            "verdict": "approve",
+            "reasoning": "Token validation logic remains cleanly encapsulated.",
+            "suggestions": ["Add client deprecation headers for clients supplying old 32-char tokens."]
+          }
+        }
+      }
+    },
+    "vuln-2": {
+      "7": {
+        "content": "Added: # TODO: validate db_path origin",
+        "explanation": "An unaddressed TODO comment was introduced into production code without input validation for database paths, leaving potential arbitrary file overwrite risks.",
+        "agents": ["security_expert", "legacy_maintainer"],
+        "severity": "high",
+        "category": "maintainability",
+        "consensus_score": 0.5125,
+        "consensus_verdict": "reject",
+        "agent_critiques": {
+          "security_expert": {
+            "score": 0.35,
+            "verdict": "reject",
+            "reasoning": "db_path parameter is unvalidated. Attacker could point db_path to unauthorized sqlite files on the filesystem.",
+            "suggestions": ["Sanitize and whitelist allowed database file paths or use an environment config."]
+          },
+          "performance_guru": {
+            "score": 0.70,
+            "verdict": "approve",
+            "reasoning": "Comment itself does not impact runtime execution.",
+            "suggestions": []
+          },
+          "legacy_maintainer": {
+            "score": 0.60,
+            "verdict": "revise",
+            "reasoning": "TODO markers should not be committed to main without tracking issue links.",
+            "suggestions": ["Remove TODO marker and implement proper path validation before merging."]
+          }
+        }
+      },
+      "8": {
+        "content": "String concatenation query → parameterized query ('?')",
+        "explanation": "The original query constructed SQL via string concatenation, allowing attackers to inject arbitrary SQL statements (e.g. `' OR '1'='1`). Parameterization binds inputs as literal values.",
+        "agents": ["security_expert", "performance_guru"],
+        "severity": "critical",
+        "category": "security",
+        "consensus_score": 0.5125,
+        "consensus_verdict": "reject",
+        "agent_critiques": {
+          "security_expert": {
+            "score": 0.35,
+            "verdict": "reject",
+            "reasoning": "While parameterized queries fix the username injection, dynamic table references remain unescaped elsewhere in the module.",
+            "suggestions": ["Implement comprehensive input validation across all database query builders."]
+          },
+          "performance_guru": {
+            "score": 0.70,
+            "verdict": "approve",
+            "reasoning": "SQLite prepared statements improve query execution plan caching across repeated lookups.",
+            "suggestions": ["Use persistent connection pool to eliminate sqlite3.connect per call."]
+          },
+          "legacy_maintainer": {
+            "score": 0.60,
+            "verdict": "revise",
+            "reasoning": "Change is in the right direction, but incomplete patch leaves technical debt.",
+            "suggestions": ["Provide backward-compatible wrapper for repository callers."]
+          }
+        }
+      },
+      "9": {
+        "content": "cursor.execute(query) → cursor.execute(query, (username,))",
+        "explanation": "Executes query with safe tuple parameter binding, delegating escaping to SQLite engine.",
+        "agents": ["security_expert"],
+        "severity": "critical",
+        "category": "security",
+        "consensus_score": 0.5125,
+        "consensus_verdict": "reject",
+        "agent_critiques": {
+          "security_expert": {
+            "score": 0.35,
+            "verdict": "reject",
+            "reasoning": "Vetoed overall due to missing authorization checks on row returned.",
+            "suggestions": ["Enforce tenant isolation on user record queries."]
+          },
+          "performance_guru": {
+            "score": 0.70,
+            "verdict": "approve",
+            "reasoning": "Binding tuple allocates trivial memory overhead.",
+            "suggestions": []
+          },
+          "legacy_maintainer": {
+            "score": 0.60,
+            "verdict": "revise",
+            "reasoning": "Ensure username is validated as string before passing to query tuple.",
+            "suggestions": ["Add type assertions."]
+          }
+        }
+      },
+      "18": {
+        "content": "Added: # FIXME: sanitize dynamic table references",
+        "explanation": "FIXME marker indicates unresolved injection surface flagged by Security Expert during multi-agent consensus review.",
+        "agents": ["security_expert", "legacy_maintainer"],
+        "severity": "high",
+        "category": "security",
+        "consensus_score": 0.5125,
+        "consensus_verdict": "reject",
+        "agent_critiques": {
+          "security_expert": {
+            "score": 0.35,
+            "verdict": "reject",
+            "reasoning": "Security veto: Cannot approve PR while dynamic table references remain unsanitized.",
+            "suggestions": ["Disallow user-controlled table names; use hardcoded enum mapping."]
+          },
+          "performance_guru": {
+            "score": 0.70,
+            "verdict": "approve",
+            "reasoning": "Static comment adds no latency.",
+            "suggestions": []
+          },
+          "legacy_maintainer": {
+            "score": 0.60,
+            "verdict": "revise",
+            "reasoning": "FIXME flags an unresolved security requirement that blocks merge.",
+            "suggestions": ["Resolve table reference sanitization prior to release."]
+          }
+        }
+      },
+      "19": {
+        "content": "LIKE '%\" + term + \"%' → parameterized LIKE '?'",
+        "explanation": "Removes string interpolation in SQL LIKE clauses, preventing wildcards and injection vectors from altering query semantics.",
+        "agents": ["security_expert", "performance_guru"],
+        "severity": "high",
+        "category": "security",
+        "consensus_score": 0.5125,
+        "consensus_verdict": "reject",
+        "agent_critiques": {
+          "security_expert": {
+            "score": 0.35,
+            "verdict": "reject",
+            "reasoning": "Term parameter binding is corrected, but surrounding table validation failed.",
+            "suggestions": ["Escape special LIKE wildcard characters (_ and %) if exact matching is desired."]
+          },
+          "performance_guru": {
+            "score": 0.70,
+            "verdict": "approve",
+            "reasoning": "Full table scan will occur with leading wildcard '%term%'; index cannot be used.",
+            "suggestions": ["Consider SQLite FTS5 (Full Text Search) for large user tables."]
+          },
+          "legacy_maintainer": {
+            "score": 0.60,
+            "verdict": "revise",
+            "reasoning": "Behavior is preserved for valid search terms.",
+            "suggestions": ["Add unit tests covering special punctuation search terms."]
+          }
+        }
+      },
+      "20": {
+        "content": "cursor.execute(query, (f'%{term}%',))",
+        "explanation": "Passes formatted wildcard search term as bound parameter tuple to cursor.execute().",
+        "agents": ["security_expert", "performance_guru"],
+        "severity": "high",
+        "category": "security",
+        "consensus_score": 0.5125,
+        "consensus_verdict": "reject",
+        "agent_critiques": {
+          "security_expert": {
+            "score": 0.35,
+            "verdict": "reject",
+            "reasoning": "Security veto remains active on this patch until all CVE criteria are resolved.",
+            "suggestions": ["Submit revised patch addressing all 3 reviewer concerns."]
+          },
+          "performance_guru": {
+            "score": 0.70,
+            "verdict": "approve",
+            "reasoning": "Acceptable for small datasets; recommend FTS index for scaling.",
+            "suggestions": []
+          },
+          "legacy_maintainer": {
+            "score": 0.60,
+            "verdict": "revise",
+            "reasoning": "F-string wildcard formatting is clean and readable.",
+            "suggestions": ["Limit maximum search term length to prevent ReDoS/excessive scan times."]
+          }
+        }
+      }
+    }
+  }
+}

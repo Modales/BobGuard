@@ -1,0 +1,218 @@
+.agent-card {
+  position: relative;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  border: 1px solid var(--surface-3);
+  transition: border-color var(--transition-fast);
+  overflow: hidden;
+}
+
+.agent-card.active {
+  border-color: var(--agent-color);
+}
+
+.agent-card.status-agreeing {
+  border-color: var(--color-success);
+}
+
+.agent-card.status-disagreeing {
+  border-color: var(--color-error);
+}
+
+.agent-glow-ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--agent-color);
+  pointer-events: none;
+}
+
+/* Header */
+.agent-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: 6px;
+}
+
+.agent-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-xs);
+  background: var(--agent-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.agent-identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-name {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.agent-focus {
+  font-size: var(--text-2xs);
+  color: var(--agent-color);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: block;
+}
+
+.agent-weight {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.weight-label {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.weight-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* Status Indicator */
+.agent-status {
+  margin-bottom: var(--space-xs);
+}
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  border: 1px solid var(--surface-3);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.status-waiting .status-text { color: var(--text-muted); }
+.status-analyzing .status-text { color: var(--accent-primary); }
+.status-found-issue .status-text { color: var(--color-warning); }
+.status-no-issue .status-text { color: var(--color-success); }
+.status-reviewing .status-text { color: var(--accent-secondary); }
+.status-agreeing .status-text { color: var(--color-success); }
+.status-disagreeing .status-text { color: var(--color-error); }
+
+.spinner {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--surface-4);
+  border-top-color: var(--agent-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Results (score, verdict, concerns, suggestions) */
+.agent-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--surface-2);
+}
+
+.result-score {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.score-bar-track {
+  flex: 1;
+  height: 4px;
+  background: var(--surface-3);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--agent-color);
+  transition: width 1s ease;
+}
+
+.score-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 28px;
+  text-align: right;
+}
+
+.result-verdict {
+  display: flex;
+}
+
+.verdict-badge {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+}
+
+.verdict-approve {
+  background: rgba(61, 163, 93, 0.12);
+  color: var(--color-success);
+}
+
+.verdict-reject {
+  background: rgba(224, 85, 97, 0.12);
+  color: var(--color-error);
+}
+
+.verdict-revise {
+  background: rgba(212, 168, 67, 0.12);
+  color: var(--color-warning);
+}
+
+.result-concerns, .result-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.concern-item, .suggestion-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+}
+
+.concern-icon, .suggestion-icon {
+  font-size: 9px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.concern-text { color: var(--color-warning); }
+.suggestion-text { color: var(--text-secondary); }
