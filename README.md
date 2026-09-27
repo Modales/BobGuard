@@ -1,58 +1,84 @@
-# IBM Bob 2.0 Hackathon
+# IBM Bob 2.0 Hackathon — Automated Enterprise Legacy & Security Modernizer
 
-Shared team repository for the IBM Bob 2.0 hackathon.
+An agentic platform that scans legacy polyglot codebases, retrieves matching
+CVEs, refactors with IBM Bob, and only ships patches that survive an AST
+safety gate, a three-agent consensus debate, and a self-healing sandbox loop.
+Every run is JWT-secured, Prometheus-instrumented, and priced in hours,
+dollars, and CO₂e.
+
+**Live docs:** [ARCHITECTURE.md](ARCHITECTURE.md) — auto-generated Mermaid
+diagrams + full API/schema reference, always in sync with the code
+(`auto_doc_generator.py --check` fails CI if it drifts).
+
+## Quickstart (judge path, ~2 minutes)
+
+```bash
+pip install -r services/orchestrator/requirements.txt -r services/auditor/requirements.txt
+./demo/verify.sh     # GO/NO-GO checklist: tests, chaos, docs, smoke
+./demo/demo.sh       # full end-to-end run against demo/legacy-app
+./demo/demo.sh --watch   # same, with the live SSE event stream attached
+```
+
+Demo credentials: `admin` / `bob-hackathon-2026` (env-overridable).
 
 ## Architecture
 
 ```
-ibm-bob-2.0-hackathon/
-├── frontend/                  # Web frontend (Node)
-│   ├── package.json
-│   └── index.html
-├── services/
-│   ├── sandbox/               # Sandbox execution service (Python)
-│   │   ├── main.py
-│   │   ├── Dockerfile
-│   │   └── requirements.txt
-│   ├── auditor/               # Auditor service (Python)
-│   │   ├── main.py
-│   │   └── requirements.txt
-│   └── orchestrator/          # Orchestrator service (Python)
-│       ├── main.py
-│       └── requirements.txt
-├── .gitignore                 # Python + Node ignores
-└── README.md
+frontend/                 React 19 + Vite dashboard (Vite build green)
+│   └── multi-agent review UI: diff viewer, consensus panel, event timeline
+│
+services/
+├── orchestrator/         FastAPI control plane (port 8000) — 11 subsystems:
+│   │                     event bus pub/sub, CVE vector DB (RAG), 3-persona
+│   │                     consensus debate with security veto, AST safety gate,
+│   │                     self-healing sandbox loop, ROI engine, Prometheus
+│   │                     metrics, polyglot parser, JWT zero-trust auth,
+│   │                     chaos suite, doc compiler
+│   ├── POST /token                     → JWT (OAuth2 password grant)
+│   ├── POST /api/v1/modernize   🔒     → full pipeline, consolidated JSON
+│   ├── GET  /api/v1/stream-logs        → live SSE bus events
+│   ├── GET  /metrics                   → Prometheus scrape endpoint
+│   └── tests/                          → 28 pytest tests, all offline
+│
+├── auditor/              Risk scanner (port 8001): AST taint-flow analysis
+│   │                     (sources → sinks with sanitizer tracking) + git
+│   │                     churn ranking → per-file risk scores
+│   └── POST /scan-repo
+│
+└── sandbox/              Isolated execution (port 8002, Docker): Python via
+                          pytest + JavaScript via Jest, 5s process-group kill,
+                          memory caps, peak-RSS metering, PostgreSQL run log
 ```
 
-| Directory               | Owner    | Stack          |
-| ----------------------- | -------- | -------------- |
-| `frontend/`             | Tiffany  | Node / HTML    |
-| `services/sandbox/`     | Ilyas    | Python, Docker |
-| `services/auditor/`     | Rumman   | Python         |
-| `services/orchestrator/`| Admin    | Python         |
+The pipeline: **audit → CVE RAG → IBM Bob refactor → language-aware AST gate
+→ consensus debate → self-healing tests → ROI report**, coordinated entirely
+through an `asyncio.Queue` event bus (see the Mermaid diagram in
+ARCHITECTURE.md).
 
-## Team workflow — read this before pushing
+## Why it's enterprise-grade
 
-To prevent git merge conflicts, **everyone works strictly inside their own
-assigned directory**:
+- **Zero-trust**: the pipeline requires a JWT with the `modernizer` role
+  (401 anonymous, 403 wrong role — verified by tests).
+- **Agentic safety**: no patch ships without passing a structural AST gate
+  (blocks injected `eval`/`exec`/`os.system`, Big-O regressions) and a
+  weighted debate where security holds a veto.
+- **Resilience**: `chaos_monkey_tester.py` injects Bob timeouts, AST parser
+  crashes, sandbox OOMs, and route explosions — 4/4 scenarios degrade
+  gracefully with safe JSON 500s, never a hang.
+- **Honesty**: every external dependency (auditor, sandbox, LLM, IBM Bob CLI)
+  degrades to a deterministic mock, and responses disclose `auditor_source`
+  / `sandbox_source` (`live` vs `mock`).
 
-1. **Branch off `main`** before starting any work:
-   ```bash
-   git checkout main && git pull
-   git checkout -b <your-name>/<short-description>
-   # e.g. git checkout -b tiffany/frontend-login-page
-   ```
-2. **Only touch files in your assigned directory.** Do not edit, reformat,
-   rename, or delete files outside it — including the root `README.md` and
-   `.gitignore` (request changes to shared files via an issue or PR comment
-   instead).
-3. Commit early and often, push your branch, and open a pull request when
-   ready. Keep PRs scoped to your own directory.
-4. Rebase on `main` regularly to stay current:
-   ```bash
-   git fetch origin && git rebase origin/main
-   ```
+## Team workflow
 
-If you need a shared change (e.g. a new top-level folder or a contract
-between services), coordinate in the team channel first — never edit another
-owner's directory directly.
+Everyone works in their own directory on a branch off `main`, PRs when green:
+
+| Directory | Owner | Active work |
+| --- | --- | --- |
+| `frontend/` | Tiffany | issue #4 — live API wiring (JWT + SSE) |
+| `services/auditor/` | Rumman / Muhammed | issue #5 — eval harness + CVE enrichment |
+| `services/sandbox/` | Ilyas | issue #6 — portability guards + JS healing + /metrics |
+| `services/orchestrator/`, `demo/` | Modales | control plane, demo tooling, verification |
+
+Never edit another owner's directory; shared files (this README, root
+config) go through an issue first.
