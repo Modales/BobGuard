@@ -85,6 +85,42 @@ database is down. All three were checked.
 This one also makes a good story for the pitch: Bob built the sandbox, then
 tried to break it.
 
+## Task 6: hardening (GitHub issue #6, branch `ilyas/hardening`)
+
+> Read GitHub issue #6's requirements below, `services/sandbox/SPEC.md`, `services/sandbox/main.py`
+> and `services/orchestrator/self_healing_loop.py`. Implement all of it, only inside
+> `services/sandbox/`. The reply contract is frozen: only add fields, never rename or remove.
+>
+> 1. Cross-platform guards. At startup, detect GNU time once: use `/usr/bin/time` or `gtime`
+>    only if `<binary> --version` succeeds and mentions GNU; otherwise run commands unwrapped
+>    and report `peak_memory_kb: 0`. Likewise, only add `ulimit -v 262144` to the Python bash
+>    wrapper if a startup probe (`bash -c 'ulimit -v 262144'`) succeeds. Expose both results in
+>    `GET /health` as additive fields (for example `gnu_time: true`, `memory_limit: true`).
+> 2. Quoting bug: `_PYTHON_EXE` and the file paths are pasted unquoted into the `bash -c`
+>    string, so a path with a space breaks every Python run. Use `shlex.quote()` for every
+>    value inserted into that string. (JavaScript already uses argument lists; keep that.)
+> 3. JavaScript tracebacks for the healing loop. The orchestrator's parser
+>    (`_TB_ERROR_RE` in `self_healing_loop.py`) only recognises lines that START at column 0
+>    with a name ending in Error/Exception, like `TypeError: …` or `AssertionError: …`.
+>    Plain `Error: …` (what Jest prints for a failed `expect`) and indented lines are NOT
+>    recognised. So for Jest failures, build the traceback from Jest's `--json`
+>    `failureMessages`: keep the original message, and make sure it ends with one
+>    column-0 line: the original JS error name if it has one (e.g. `TypeError: …`),
+>    otherwise `AssertionError: <first line of the failure message>`. Strip ANSI colour codes.
+>    Plain `node submission.js` crashes must end with the same kind of line.
+> 4. `GET /metrics` in Prometheus text format, with no new dependency (write the text
+>    yourself): `sandbox_runs_total{language,status}` counter and a `sandbox_run_duration_ms`
+>    summary (`_count` and `_sum`), computed from `SandboxRun` rows with a SQLAlchemy
+>    aggregate. If the database is down, return a valid empty metrics page with HTTP 200.
+> 5. Add these requests (with Postman test scripts) to
+>    `services/sandbox/postman/sandbox.postman_collection.json`, keeping the existing 12:
+>    `13 GET /metrics` (200, contains `sandbox_runs_total`), `14 JavaScript - TypeError crash`
+>    (traceback has a line starting `TypeError:`), and in request 09 add a check that the
+>    traceback has a line starting `AssertionError:`.
+> 6. Update `SPEC.md` for the new behaviour.
+>
+> Use `.venv` for Python commands. Do not start the server; I will test it.
+
 ## Screenshots (required for the submission)
 
 Every team member must add these to the repo.

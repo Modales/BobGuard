@@ -364,6 +364,7 @@
               "pm.test(\"failed overall\", function () { pm.expect(body.passed).to.eql(false); });",
               "pm.test(\"2 tests total\", function () { pm.expect(body.tests_total).to.eql(2); });",
               "pm.test(\"1 failed\", function () { pm.expect(body.tests_failed).to.eql(1); });",
+              "pm.test(\"traceback has a line starting AssertionError:\", function () { pm.expect(body.traceback).to.match(/^AssertionError:/m); });",
               "pm.test(\"answered in under 10 s (orchestrator limit)\", function () { pm.expect(pm.response.responseTime).to.be.below(10000); });"
             ]
           }
@@ -469,6 +470,78 @@
         "body": {
           "mode": "raw",
           "raw": "{\n  \"code\": \"const hog = [];\\nwhile (true) {\\n  hog.push(new Array(1e6).fill(1));\\n}\\n\",\n  \"target_version\": \"node22\",\n  \"language\": \"javascript\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/run-tests",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "run-tests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "13 GET /metrics",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "pm.test(\"contains sandbox_runs_total\", function () { pm.expect(pm.response.text()).to.include(\"sandbox_runs_total\"); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/metrics",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "metrics"
+          ]
+        }
+      }
+    },
+    {
+      "name": "14 JavaScript - TypeError crash",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test(\"failed\", function () { pm.expect(body.passed).to.eql(false); });",
+              "pm.test(\"traceback has a line starting TypeError:\", function () { pm.expect(body.traceback).to.match(/^TypeError:/m); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"const x = null;\\nconsole.log(x.property);\\n\",\n  \"target_version\": \"node22\",\n  \"language\": \"javascript\"\n}",
           "options": {
             "raw": {
               "language": "json"
