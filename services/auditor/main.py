@@ -92,13 +92,21 @@ def _compute_risk_scores(
 def scan_repo(body: ScanRequest) -> ScanResponse:
     """Scan a locally cloned repository and return a risk assessment."""
     repo_path = Path(body.repo_path)
-    if not repo_path.exists():
-        raise HTTPException(status_code=400, detail=f"Path does not exist: {repo_path}")
+    if not repo_path.is_dir():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Path does not exist or is not a directory: {repo_path}"
+            ),
+        )
 
     # --- Taint analysis (every .py file, skipping non-source dirs) ---
-    taint_issues: list[dict[str, Any]] = cast(
-        list[dict[str, Any]], list(_taint_scan_repo(repo_path, skip_dirs=_SKIP_DIRS))
-    )
+    try:
+        taint_issues: list[dict[str, Any]] = cast(
+            list[dict[str, Any]], list(_taint_scan_repo(repo_path, skip_dirs=_SKIP_DIRS))
+        )
+    except Exception:
+        taint_issues = []
 
     # --- Churn analysis (git history, last 90 days) ---
     try:

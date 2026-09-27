@@ -54,14 +54,24 @@ class Finding(TypedDict):
 # Helpers — source / sink / sanitizer detection
 # ---------------------------------------------------------------------------
 
-# Dotted attribute chains we recognise as taint sources.
+# Dotted attribute chains we recognise as taint sources (call-based).
 _SOURCE_CHAINS: set[tuple[str, ...]] = {
     ("request", "args", "get"),
     ("request", "form", "get"),
+    ("request", "cookies", "get"),
+    ("request", "headers", "get"),
+    ("request", "values", "get"),
+    ("os", "environ", "get"),      # os.environ.get(...)
+}
+
+# Attribute chains that are taint sources accessed as bare attributes
+# (not calls), analogous to sys.argv.  Checked by _is_bare_attr_source.
+_BARE_ATTR_SOURCES: set[tuple[str, ...]] = {
+    ("request", "json"),           # Flask: request.json (a property, not a call)
 }
 
 # Bare function names that are taint sources.
-_SOURCE_FUNCS: set[str] = {"input"}
+_SOURCE_FUNCS: set[str] = {"input", "getenv"}
 
 # Function names whose single argument is sanitized on return.
 _SANITIZER_FUNCS: set[str] = {"sanitize", "escape"}
@@ -96,6 +106,19 @@ def _is_sys_argv(node: ast.expr) -> bool:
         node = node.value
     chain = _attr_chain(node)
     return chain == ("sys", "argv")
+
+
+def _is_bare_attr_source(node: ast.expr) -> str | None:
+    """Return a source label if *node* is a bare attribute taint source, else None.
+
+    Handles cases like ``request.json`` where the source is an attribute
+    access rather than a call, so it would never be matched by
+    ``_is_source_call`` (which requires ``ast.Call``).
+    """
+    chain = _attr_chain(node)
+    if chain in _BARE_ATTR_SOURCES:
+        return ".".join(chain)
+    return None
 
 
 def _is_sanitizer_call(node: ast.expr) -> bool:
@@ -156,6 +179,37 @@ def _execute_sink_label(call_node: ast.Call) -> str | None:
         chain = _attr_chain(call_node.func.value)
         obj = ".".join(chain) if chain else "obj"
         return f"{obj}.execute()"
+    return None
+
+
+def _shell_sink_label(call_node: ast.Call) -> str | None:
+    """Return a sink label if *call_node* is a dangerous shell/eval sink.
+
+    Covers:
+    * ``os.system(...)``
+    * ``subprocess.run/call/Popen(...)`` with ``shell=True``
+    * ``eval(...)`` / ``exec(...)``
+    """
+    chain = _attr_chain(call_node.func)
+
+    # eval / exec — bare names
+    if len(chain) == 1 and chain[0] in ("eval", "exec"):
+        return f"{chain[0]}()"
+
+    # os.system(...)
+    if chain == ("os", "system"):
+        return "os.system()"
+
+    # subprocess.run / subprocess.call / subprocess.Popen with shell=True
+    if (
+        len(chain) == 2
+        and chain[0] == "subprocess"
+        and chain[1] in ("run", "call", "Popen")
+    ):
+        for kw in call_node.keywords:
+            if kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                return f"subprocess.{chain[1]}(shell=True)"
+
     return None
 
 
@@ -231,9 +285,9 @@ class _TaintVisitor(ast.NodeVisitor):
     # Call expressions — detect sinks
     # ------------------------------------------------------------------
 
-    def visit_Expr(self, node: ast.Expr) -> None:
-        if isinstance(node.value, ast.Call):
-            self._check_call(node.value)
+    def visit_Call(self, node: ast.Call) -> None:
+        """Check every call expression regardless of its position in the AST."""
+        self._check_call(node)
         self.generic_visit(node)
 
     # ------------------------------------------------------------------
@@ -246,9 +300,12 @@ class _TaintVisitor(ast.NodeVisitor):
         label = _is_source_call(node)
         if label:
             return label
-        # sys.argv reference
+        # sys.argv and other bare attribute sources (e.g. request.json)
         if _is_sys_argv(node):
             return "sys.argv"
+        bare = _is_bare_attr_source(node)
+        if bare:
+            return bare
         # Sanitizer call clears taint
         if _is_sanitizer_call(node):
             return None
@@ -265,12 +322,25 @@ class _TaintVisitor(ast.NodeVisitor):
         return None
 
     def _any_tainted_child(self, node: ast.expr) -> str | None:
-        """Return source label if any child expression of *node* is tainted."""
+        """Return source label if any child expression of *node* is tainted.
+
+        Recognises both:
+        * A previously-recorded tainted ``Name`` (e.g. assigned on an earlier line)
+        * A direct source call embedded inline (e.g. ``f"... {request.args.get('x')}"``
+          where the source call appears directly inside the f-string rather than
+          being assigned to a variable first).
+        """
         for child in ast.walk(node):
             if child is node:
                 continue
             if isinstance(child, ast.Name) and child.id in self._tainted:
                 return self._tainted[child.id]
+            if isinstance(child, ast.Call):
+                label = _is_source_call(child)
+                if label:
+                    return label
+                if _is_sys_argv(child):
+                    return "sys.argv"
         return None
 
     def _check_call(self, call: ast.Call) -> None:
@@ -314,6 +384,37 @@ class _TaintVisitor(ast.NodeVisitor):
                     sink=f"{obj}.execute()",
                 )
             )
+            return
+
+        # --- Path 3: shell/eval sinks with a tainted first argument ---
+        shell_label = _shell_sink_label(call)
+        if shell_label and call.args:
+            first_arg = call.args[0]
+            # Directly tainted variable
+            if isinstance(first_arg, ast.Name) and first_arg.id in self._tainted:
+                self.findings.append(
+                    Finding(
+                        file=self.filepath,
+                        line=call.lineno,
+                        variable=first_arg.id,
+                        source=self._tainted[first_arg.id],
+                        sink=shell_label,
+                    )
+                )
+                return
+            # Tainted variable embedded in a formatted expression
+            source = self._any_tainted_child(first_arg)
+            if source:
+                var_name = self._first_tainted_name_in(first_arg) or "<expr>"
+                self.findings.append(
+                    Finding(
+                        file=self.filepath,
+                        line=call.lineno,
+                        variable=var_name,
+                        source=source,
+                        sink=shell_label,
+                    )
+                )
 
     def _first_tainted_name_in(self, node: ast.expr) -> str | None:
         for child in ast.walk(node):

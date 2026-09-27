@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from git import Repo
-from git.exc import InvalidGitRepositoryError, NoSuchPathError
+from git.exc import GitCommandError, InvalidGitRepositoryError, NoSuchPathError
 
 
 class ChurnEntry(TypedDict):
@@ -58,7 +58,13 @@ def file_churn(repo_path: str | Path, days: int = 90) -> list[ChurnEntry]:
 
     counts: dict[str, int] = defaultdict(int)
 
-    for commit in repo.iter_commits():
+    try:
+        commits = list(repo.iter_commits())
+    except GitCommandError:
+        # Repo has no commits yet (unborn HEAD) — return empty churn.
+        return []
+
+    for commit in commits:
         # authored_datetime is timezone-aware
         if commit.authored_datetime < cutoff:
             break  # iter_commits walks newest-first; stop once past the window
