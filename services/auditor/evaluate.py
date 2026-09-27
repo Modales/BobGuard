@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 # Ensure taint_scan can be imported from the same directory.
@@ -29,10 +30,19 @@ def run_evaluation() -> None:
     tn: list[str] = []
     fn: list[str] = []
 
+    # cwe_counts[cwe_id] = {"name": ..., "count": n}
+    cwe_counts: dict[str, dict[str, object]] = defaultdict(lambda: {"name": "", "count": 0})
+
     for filename, true_label in sorted(labels.items()):
         filepath = CORPUS_DIR / filename
         findings = scan_file(filepath)
         predicted = "vulnerable" if findings else "safe"
+
+        for f in findings:
+            cwe = f["cwe"]
+            cwe_id: str = cwe["id"]
+            cwe_counts[cwe_id]["name"] = cwe["name"]
+            cwe_counts[cwe_id]["count"] = int(cwe_counts[cwe_id]["count"]) + 1  # type: ignore[arg-type]
 
         if true_label == "vulnerable" and predicted == "vulnerable":
             tp.append(filename)
@@ -81,6 +91,19 @@ def run_evaluation() -> None:
         f"| F1 Score  | {f1:.3f} |",
         "",
     ]
+
+    # CWE breakdown table
+    lines += [
+        "## Findings by CWE Category",
+        "",
+        "| CWE ID | Short Name | Findings |",
+        "|--------|------------|----------|",
+    ]
+    for cwe_id in sorted(cwe_counts):
+        cwe_name = cwe_counts[cwe_id]["name"]
+        count = cwe_counts[cwe_id]["count"]
+        lines.append(f"| {cwe_id} | {cwe_name} | {count} |")
+    lines.append("")
 
     if misclassified:
         lines += [

@@ -42,12 +42,51 @@ from typing import TypedDict
 # Public types
 # ---------------------------------------------------------------------------
 
+class CweInfo(TypedDict):
+    id: str
+    name: str
+
+
 class Finding(TypedDict):
     file: str
     line: int
     variable: str
     source: str
     sink: str
+    cwe: CweInfo
+
+
+# ---------------------------------------------------------------------------
+# CWE mapping — sink label prefix → CWE ID + short name
+# ---------------------------------------------------------------------------
+
+#: Maps a sink-label *prefix* (matched with str.startswith) to its CWE.
+#: Evaluated in order; first match wins.
+_SINK_CWE: list[tuple[str, CweInfo]] = [
+    # .execute() calls → SQL Injection
+    (".execute()",  CweInfo(id="CWE-89",  name="SQL Injection")),
+    # os.system() → OS Command Injection
+    ("os.system()", CweInfo(id="CWE-78",  name="OS Command Injection")),
+    # subprocess.*(shell=True) → OS Command Injection
+    ("subprocess.", CweInfo(id="CWE-78",  name="OS Command Injection")),
+    # eval() / exec() → Eval Injection
+    ("eval()",      CweInfo(id="CWE-95",  name="Improper Neutralization of Directives in Dynamically Evaluated Code (Eval Injection)")),
+    ("exec()",      CweInfo(id="CWE-95",  name="Improper Neutralization of Directives in Dynamically Evaluated Code (Eval Injection)")),
+]
+
+_UNKNOWN_CWE: CweInfo = CweInfo(id="CWE-unknown", name="Unknown")
+
+
+def _cwe_for_sink(sink_label: str) -> CweInfo:
+    """Return the CweInfo that matches *sink_label*, or _UNKNOWN_CWE."""
+    # execute() sinks use dynamic object names like "cursor.execute()" or
+    # "obj.execute()" — match on the suffix instead.
+    if sink_label.endswith(".execute()"):
+        return CweInfo(id="CWE-89", name="SQL Injection")
+    for prefix, cwe in _SINK_CWE:
+        if sink_label.startswith(prefix):
+            return cwe
+    return _UNKNOWN_CWE
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +399,7 @@ class _TaintVisitor(ast.NodeVisitor):
                     variable=var_name,
                     source=source,
                     sink=sink_label,
+                    cwe=_cwe_for_sink(sink_label),
                 )
             )
             return
@@ -375,13 +415,15 @@ class _TaintVisitor(ast.NodeVisitor):
             var = call.args[0].id
             chain = _attr_chain(call.func.value)
             obj = ".".join(chain) if chain else "obj"
+            _sink = f"{obj}.execute()"
             self.findings.append(
                 Finding(
                     file=self.filepath,
                     line=call.lineno,
                     variable=var,
                     source=self._tainted[var],
-                    sink=f"{obj}.execute()",
+                    sink=_sink,
+                    cwe=_cwe_for_sink(_sink),
                 )
             )
             return
@@ -399,6 +441,7 @@ class _TaintVisitor(ast.NodeVisitor):
                         variable=first_arg.id,
                         source=self._tainted[first_arg.id],
                         sink=shell_label,
+                        cwe=_cwe_for_sink(shell_label),
                     )
                 )
                 return
@@ -413,6 +456,7 @@ class _TaintVisitor(ast.NodeVisitor):
                         variable=var_name,
                         source=source,
                         sink=shell_label,
+                        cwe=_cwe_for_sink(shell_label),
                     )
                 )
 
