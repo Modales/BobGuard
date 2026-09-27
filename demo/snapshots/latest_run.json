@@ -3,7 +3,7 @@
   "target_version": "python3.12",
   "auditor_source": "mock",
   "sandbox_source": "mock",
-  "note": "Recorded by demo/live_snapshot.py — a byte-exact real ModernizationResponse. Event ids, timestamps and scores vary run to run; shapes are the contract.",
+  "note": "Trimmed excerpt of a real recorded run (repeated CVE hits/logs/timeline entries elided). Regenerate the full verbatim response with: python demo/live_snapshot.py. Event ids, timestamps and scores vary run to run; shapes are the contract. The `_shape` block below documents every field type.",
   "_shape": {
     "vulnerabilities": [{"file_path": "str", "line_number": "int", "description": "str", "severity": "critical|high|medium|low"}],
     "cve_hits": [{"cve_id": "str", "package": "str", "severity": "str", "score": "float", "fixed_version": "str|null"}],
