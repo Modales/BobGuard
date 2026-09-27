@@ -1,4 +1,5 @@
-import { ReviewProvider } from './state/ReviewContext';
+import { ReviewProvider, useReview } from './state/ReviewContext';
+import LoginForm from './components/LoginForm';
 import DashboardHeader from './components/DashboardHeader';
 import WorkflowTimeline from './components/WorkflowTimeline';
 import VulnerabilitySelector from './components/VulnerabilitySelector';
@@ -8,6 +9,21 @@ import AgentConsensusPanel from './components/AgentConsensusPanel';
 import EventTimeline from './components/EventTimeline';
 import ROICard from './components/ROICard';
 import './App.css';
+
+function DashboardGate() {
+  const { state } = useReview();
+
+  // Show login screen if:
+  // - Not authenticated AND apiMode hasn't been explicitly set to 'demo'
+  // - This means first-time visitors see the login (with "Demo Mode" option)
+  const needsLogin = !state.isAuthenticated && state.apiMode !== 'demo';
+
+  if (needsLogin) {
+    return <LoginForm />;
+  }
+
+  return <Dashboard />;
+}
 
 function Dashboard() {
   return (
@@ -35,7 +51,7 @@ function Dashboard() {
 export default function App() {
   return (
     <ReviewProvider>
-      <Dashboard />
+      <DashboardGate />
     </ReviewProvider>
   );
 }

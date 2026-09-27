@@ -245,3 +245,12 @@ export function calculateConsensus(agents, vulnerabilityId) {
   };
 }
 
+/**
+ * Returns the active data source based on mode and availability.
+ */
+export function getActiveData(state) {
+  if (state.apiMode === 'live' && state.liveData) {
+    return state.liveData;
+  }
+  return state.mockData;
+}

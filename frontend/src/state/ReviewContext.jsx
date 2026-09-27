@@ -1,16 +1,26 @@
 import { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react';
 import mockData from '../data/mockData.json';
-import { WORKFLOW_STAGES, TOPIC_TO_STAGE, deriveAgentState, computeDiffLines, getLineExplanation } from './dataHelpers';
-
-// ─── API Configuration ───────────────────────────────────────────────────────
-
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
-const DEMO_CREDENTIALS = { username: 'admin', password: 'bob-hackathon-2026' };
+import {
+  WORKFLOW_STAGES,
+  deriveAgentState,
+  computeDiffLines,
+  getLineExplanation,
+  getActiveData,
+} from './dataHelpers';
+import {
+  login as apiLogin,
+  getToken,
+  clearToken,
+  isTokenValid,
+  checkBackendHealth,
+} from '../api/auth';
+import { runModernize } from '../api/modernize';
+import { connectSSE } from '../api/sse';
 
 // ─── Initial State ───────────────────────────────────────────────────────────
 
 const initialState = {
-  /** Raw data — replaced with live API response once a run completes */
+  /** Raw data from orchestrator-derived mockData.json */
   mockData,
 
   /** Current workflow stage index in WORKFLOW_STAGES */
@@ -38,26 +48,31 @@ const initialState = {
   /** Animation progress 0-100 */
   animationProgress: 0,
 
-  /**
-   * Whether the timed demo sequence is playing.
-   * When live SSE is active this is false — stage advances come from the bus.
-   */
+  /** Whether the timed review sequence is playing */
   isPlaying: false,
 
   /** The index into event_timeline that we've revealed so far */
   timelineRevealIndex: -1,
 
-  /**
-   * 'idle' | 'connecting' | 'live' | 'demo'
-   *  - idle      : nothing running
-   *  - connecting: attempting JWT + SSE handshake
-   *  - live      : receiving real SSE events from the orchestrator
-   *  - demo      : fallback timer-based replay (API unreachable)
-   */
-  apiMode: 'idle',
+  // ─── Auth state ───────────────────────────────────────────────────────
+  isAuthenticated: false,
+  token: null,
+  user: null, // { username, role }
+  authError: null,
+  authLoading: false,
 
-  /** Human-readable status shown in the header */
+  // ─── API mode ─────────────────────────────────────────────────────────
+  apiMode: null, // null (shows login) | 'demo' | 'live'
   apiStatus: null,
+  apiError: null,
+  apiLoading: false,
+  backendAvailable: false,
+
+  // ─── Live data (when apiMode === 'live') ──────────────────────────────
+  liveData: null, // full ModernizationResponse from POST /modernize
+
+  // ─── SSE tracking ─────────────────────────────────────────────────────
+  sseEvents: [], // accumulated SSE events for timeline display
 
   /** ROI summary — populated from live API response or kept from mockData */
   roiSummary: mockData.roi_summary ?? null,
@@ -85,105 +100,21 @@ function reviewReducer(state, action) {
         selectedDiffLine: null,
         currentExplanation: null,
         apiMode: 'demo',
-        apiStatus: 'Demo mode — orchestrator unreachable',
+        apiStatus: 'Demo mode — local simulation',
         agentStates: {
           security_expert: 'waiting',
           performance_guru: 'waiting',
           legacy_maintainer: 'waiting',
         },
       };
-
-    case 'START_LIVE':
-      return {
-        ...state,
-        workflowStageIndex: 1,
-        isPlaying: false,
-        animationProgress: 0,
-        timelineRevealIndex: -1,
-        selectedDiffLine: null,
-        currentExplanation: null,
-        apiMode: 'live',
-        apiStatus: 'Connected — live pipeline',
-        agentStates: {
-          security_expert: 'waiting',
-          performance_guru: 'waiting',
-          legacy_maintainer: 'waiting',
-        },
-      };
-
-    case 'SET_CONNECTING':
-      return {
-        ...state,
-        apiMode: 'connecting',
-        apiStatus: 'Connecting to orchestrator…',
-      };
-
-    case 'SSE_STAGE': {
-      // Advance stage based on a live SSE topic
-      const targetStage = action.stage;
-      const targetIndex = WORKFLOW_STAGES.indexOf(targetStage);
-      if (targetIndex <= state.workflowStageIndex) return state;
-
-      const newAgentStates = {};
-      for (const agent of state.mockData.agents) {
-        const critique = agent.critiques.find(
-          (c) => c.vulnerabilityId === state.selectedVulnerabilityId
-        );
-        newAgentStates[agent.id] = deriveAgentState(critique, targetStage);
-      }
-      return {
-        ...state,
-        workflowStageIndex: targetIndex,
-        agentStates: newAgentStates,
-      };
-    }
-
-    case 'SSE_EVENT': {
-      // Append one event entry to the live timeline
-      const nextIndex = state.timelineRevealIndex + 1;
-      const updatedTimeline = [...state.mockData.event_timeline];
-      if (nextIndex >= updatedTimeline.length) {
-        updatedTimeline.push(action.event);
-      } else {
-        updatedTimeline[nextIndex] = action.event;
-      }
-      return {
-        ...state,
-        timelineRevealIndex: nextIndex,
-        mockData: {
-          ...state.mockData,
-          event_timeline: updatedTimeline,
-        },
-      };
-    }
-
-    case 'SSE_COMPLETE': {
-      // Pipeline finished — merge live ROI + mark completed
-      const completedIndex = WORKFLOW_STAGES.indexOf('completed');
-      const newAgentStates = {};
-      for (const agent of state.mockData.agents) {
-        const critique = agent.critiques.find(
-          (c) => c.vulnerabilityId === state.selectedVulnerabilityId
-        );
-        newAgentStates[agent.id] = deriveAgentState(critique, 'completed');
-      }
-      return {
-        ...state,
-        workflowStageIndex: completedIndex,
-        isPlaying: false,
-        animationProgress: 100,
-        apiMode: 'live',
-        apiStatus: 'Pipeline complete',
-        agentStates: newAgentStates,
-        roiSummary: action.roiSummary ?? state.roiSummary,
-      };
-    }
 
     case 'ADVANCE_STAGE': {
       const nextIndex = Math.min(state.workflowStageIndex + 1, WORKFLOW_STAGES.length - 1);
       const nextStage = WORKFLOW_STAGES[nextIndex];
+      const data = getActiveData(state);
+      const agents = data.agents || state.mockData.agents;
       const newAgentStates = {};
-      for (const agent of state.mockData.agents) {
+      for (const agent of agents) {
         const critique = agent.critiques.find(
           (c) => c.vulnerabilityId === state.selectedVulnerabilityId
         );
@@ -207,9 +138,11 @@ function reviewReducer(state, action) {
       };
 
     case 'SELECT_VULNERABILITY': {
+      const data = getActiveData(state);
+      const agents = data.agents || state.mockData.agents;
       const newAgentStates = {};
       const stage = WORKFLOW_STAGES[state.workflowStageIndex];
-      for (const agent of state.mockData.agents) {
+      for (const agent of agents) {
         const critique = agent.critiques.find(
           (c) => c.vulnerabilityId === action.vulnerabilityId
         );
@@ -227,8 +160,10 @@ function reviewReducer(state, action) {
     case 'SELECT_DIFF_LINE': {
       const diffLines = state.diffsByVulnerability[state.selectedVulnerabilityId] || [];
       const diffLine = diffLines.find((l) => l.lineNumber === action.lineNumber);
+      const data = getActiveData(state);
+      const explanations = data.lineExplanations || state.mockData.lineExplanations;
       const explanation = getLineExplanation(
-        state.mockData.lineExplanations,
+        explanations,
         state.selectedVulnerabilityId,
         action.lineNumber,
         diffLine
@@ -249,19 +184,209 @@ function reviewReducer(state, action) {
 
     case 'TICK_PROGRESS': {
       const newProgress = Math.min(state.animationProgress + action.delta, 100);
-      return { ...state, animationProgress: newProgress };
+      return {
+        ...state,
+        animationProgress: newProgress,
+      };
     }
 
     case 'REVEAL_TIMELINE_EVENT':
-      return { ...state, timelineRevealIndex: action.index };
+      return {
+        ...state,
+        timelineRevealIndex: action.index,
+      };
 
     case 'RESET':
       return {
         ...initialState,
         diffsByVulnerability: state.diffsByVulnerability,
-        apiMode: 'idle',
-        apiStatus: null,
+        // Preserve auth/api state across resets
+        isAuthenticated: state.isAuthenticated,
+        token: state.token,
+        user: state.user,
+        apiMode: state.apiMode,
+        backendAvailable: state.backendAvailable,
+        liveData: null,
+        sseEvents: [],
+        roiSummary: state.mockData.roi_summary ?? null,
       };
+
+    // ── Auth actions ──────────────────────────────────────────────────
+
+    case 'AUTH_START':
+      return { ...state, authLoading: true, authError: null };
+
+    case 'AUTH_SUCCESS':
+      return {
+        ...state,
+        authLoading: false,
+        isAuthenticated: true,
+        token: action.token,
+        user: action.user,
+        authError: null,
+        apiMode: action.apiMode || 'live',
+        apiStatus: 'Connected — live pipeline',
+      };
+
+    case 'AUTH_FAILURE':
+      return {
+        ...state,
+        authLoading: false,
+        authError: action.error,
+        isAuthenticated: false,
+        token: null,
+        user: null,
+      };
+
+    case 'LOGOUT':
+      return {
+        ...state,
+        isAuthenticated: false,
+        token: null,
+        user: null,
+        authError: null,
+        apiMode: null,
+        apiStatus: null,
+        liveData: null,
+        sseEvents: [],
+      };
+
+    // ── API mode actions ──────────────────────────────────────────────
+
+    case 'SET_API_MODE':
+      return {
+        ...state,
+        apiMode: action.mode,
+        liveData: action.mode === 'demo' ? null : state.liveData,
+      };
+
+    case 'SET_BACKEND_AVAILABLE':
+      return { ...state, backendAvailable: action.available };
+
+    // ── Live pipeline actions ─────────────────────────────────────────
+
+    case 'LIVE_PIPELINE_START':
+      return {
+        ...state,
+        apiLoading: true,
+        apiError: null,
+        apiStatus: 'Connected — live pipeline',
+        workflowStageIndex: 1,
+        isPlaying: true,
+        animationProgress: 0,
+        timelineRevealIndex: -1,
+        selectedDiffLine: null,
+        currentExplanation: null,
+        sseEvents: [],
+        agentStates: {
+          security_expert: 'waiting',
+          performance_guru: 'waiting',
+          legacy_maintainer: 'waiting',
+        },
+      };
+
+    case 'LIVE_STAGE_UPDATE': {
+      const stageIndex = WORKFLOW_STAGES.indexOf(action.stage);
+      const effectiveIndex =
+        stageIndex >= 0
+          ? Math.max(state.workflowStageIndex, stageIndex)
+          : state.workflowStageIndex;
+
+      // Update agent states according to stage
+      const newAgentStates = {};
+      const data = getActiveData(state);
+      const agents = data.agents || state.mockData.agents;
+      for (const agent of agents) {
+        const critique = agent.critiques?.find(
+          (c) => c.vulnerabilityId === state.selectedVulnerabilityId
+        );
+        newAgentStates[agent.id] = deriveAgentState(critique, action.stage);
+      }
+
+      return {
+        ...state,
+        workflowStageIndex: effectiveIndex,
+        agentStates: { ...state.agentStates, ...newAgentStates },
+        sseEvents: [
+          ...state.sseEvents,
+          {
+            topic: action.topic,
+            message: action.message,
+            level: action.level || 'info',
+          },
+        ],
+        timelineRevealIndex: state.sseEvents.length,
+      };
+    }
+
+    case 'LIVE_PIPELINE_COMPLETE':
+      return {
+        ...state,
+        apiLoading: false,
+        isPlaying: false,
+        workflowStageIndex: WORKFLOW_STAGES.length - 1,
+        animationProgress: 100,
+        apiStatus: 'Pipeline complete',
+      };
+
+    case 'LIVE_PIPELINE_ERROR':
+      return {
+        ...state,
+        apiLoading: false,
+        apiError: action.error,
+        isPlaying: false,
+      };
+
+    case 'SET_LIVE_DATA': {
+      const newDiffs = { ...state.diffsByVulnerability };
+      const liveData = action.data;
+
+      // Map live vulnerabilities to have ids
+      if (liveData.vulnerabilities) {
+        liveData.vulnerabilities = liveData.vulnerabilities.map((v, i) => ({
+          ...v,
+          id: v.id || `vuln-${i + 1}`,
+        }));
+      }
+
+      // Map refactors to have vulnerabilityId association
+      if (liveData.refactors && liveData.vulnerabilities) {
+        liveData.refactors = liveData.refactors.map((r, i) => {
+          const vuln = liveData.vulnerabilities[i];
+          const vulnId = vuln?.id || `vuln-${i + 1}`;
+          return { ...r, vulnerabilityId: vulnId };
+        });
+
+        for (const refactor of liveData.refactors) {
+          if (refactor.original_code && refactor.refactored_code) {
+            newDiffs[refactor.vulnerabilityId] = computeDiffLines(
+              refactor.original_code,
+              refactor.refactored_code
+            );
+          }
+        }
+      }
+
+      // Format event timeline
+      if (liveData.event_timeline && Array.isArray(liveData.event_timeline)) {
+        liveData.event_timeline = liveData.event_timeline.map((entry) => {
+          if (typeof entry === 'string') {
+            const [topic] = entry.split(' ');
+            return { topic, message: entry, level: 'info' };
+          }
+          return entry;
+        });
+      }
+
+      return {
+        ...state,
+        liveData,
+        roiSummary: liveData.roi_summary || state.roiSummary,
+        diffsByVulnerability: newDiffs,
+        selectedVulnerabilityId:
+          liveData.vulnerabilities?.[0]?.id || state.selectedVulnerabilityId,
+      };
+    }
 
     default:
       return state;
@@ -275,144 +400,165 @@ const ReviewContext = createContext(null);
 export function ReviewProvider({ children }) {
   const [state, dispatch] = useReducer(reviewReducer, initialState);
   const timerRef = useRef(null);
-  const sseRef = useRef(null);
-  // Cached JWT token — refreshed per run (1-hour TTL is fine for a demo session)
-  const tokenRef = useRef(null);
+  const sseCleanupRef = useRef(null);
 
-  // ── JWT login ────────────────────────────────────────────────────────────
-  async function acquireToken() {
-    if (tokenRef.current) return tokenRef.current;
-    const body = new URLSearchParams({
-      username: DEMO_CREDENTIALS.username,
-      password: DEMO_CREDENTIALS.password,
+  // ── Check backend availability on mount ─────────────────────────────
+
+  useEffect(() => {
+    checkBackendHealth().then((available) => {
+      dispatch({ type: 'SET_BACKEND_AVAILABLE', available });
     });
-    const res = await fetch(`${API_BASE}/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
-    });
-    if (!res.ok) throw new Error(`/token ${res.status}`);
-    const data = await res.json();
-    tokenRef.current = data.access_token;
-    return tokenRef.current;
-  }
 
-  // ── SSE pipeline connection ──────────────────────────────────────────────
-  function openSSE(token) {
-    const url = `${API_BASE}/api/v1/stream-logs?repo_path=${encodeURIComponent(
-      state.mockData.pipeline.repo_path
-    )}&target_version=${encodeURIComponent(state.mockData.pipeline.target_version)}&token=${encodeURIComponent(token)}`;
-
-    const es = new EventSource(url);
-    sseRef.current = es;
-
-    es.onmessage = (e) => {
-      let frame;
-      try { frame = JSON.parse(e.data); } catch { return; }
-
-      // Map SSE topic → workflow stage
-      const stage = TOPIC_TO_STAGE[frame.topic];
-      if (stage) {
-        dispatch({ type: 'SSE_STAGE', stage });
+    const existingToken = getToken();
+    if (existingToken && isTokenValid()) {
+      try {
+        const payload = JSON.parse(atob(existingToken.split('.')[1]));
+        dispatch({
+          type: 'AUTH_SUCCESS',
+          token: existingToken,
+          user: { username: payload.sub, role: payload.role },
+          apiMode: 'live',
+        });
+      } catch {
+        clearToken();
       }
+    }
+  }, []);
 
-      // Append event entry to the live timeline
+  // ── Authentication ──────────────────────────────────────────────────
+
+  const login = useCallback(async (username, password) => {
+    dispatch({ type: 'AUTH_START' });
+    try {
+      const data = await apiLogin(username, password);
+      const payload = JSON.parse(atob(data.access_token.split('.')[1]));
       dispatch({
-        type: 'SSE_EVENT',
-        event: {
-          topic: frame.topic ?? 'info',
-          message: frame.message ?? '',
-          level: frame.level ?? 'info',
+        type: 'AUTH_SUCCESS',
+        token: data.access_token,
+        user: { username: payload.sub, role: payload.role },
+        apiMode: data.is_demo_fallback ? 'demo' : 'live',
+      });
+      return data;
+    } catch (err) {
+      dispatch({ type: 'AUTH_FAILURE', error: err.message });
+      throw err;
+    }
+  }, []);
+
+  const logout = useCallback(() => {
+    clearToken();
+    if (sseCleanupRef.current) {
+      sseCleanupRef.current();
+      sseCleanupRef.current = null;
+    }
+    dispatch({ type: 'LOGOUT' });
+  }, []);
+
+  // ── Demo-mode start review (timer-driven) ───────────────────────────
+
+  const startDemoReview = useCallback(() => {
+    dispatch({ type: 'RESET' });
+    setTimeout(() => {
+      dispatch({ type: 'START_REVIEW' });
+    }, 100);
+  }, []);
+
+  // ── Live-mode start review (SSE + /modernize) ────────────────────────
+
+  const startLiveReview = useCallback(
+    async (repoPath, targetVersion) => {
+      if (!state.token) return;
+
+      dispatch({ type: 'LIVE_PIPELINE_START' });
+
+      const cleanup = connectSSE(repoPath, targetVersion, {
+        onEvent: ({ topic, stage, message, level }) => {
+          if (stage) {
+            dispatch({ type: 'LIVE_STAGE_UPDATE', stage, topic, message, level });
+          }
+        },
+        onError: (err) => {
+          dispatch({ type: 'LIVE_PIPELINE_ERROR', error: err.message });
+        },
+        onComplete: async () => {
+          try {
+            const result = await runModernize(repoPath, targetVersion, state.token);
+            dispatch({ type: 'SET_LIVE_DATA', data: result });
+            dispatch({ type: 'LIVE_PIPELINE_COMPLETE' });
+          } catch (err) {
+            if (err.status === 401) {
+              logout();
+            }
+            dispatch({ type: 'LIVE_PIPELINE_ERROR', error: err.message });
+          }
         },
       });
 
-      // Pipeline finished
-      if (frame.topic === 'pipeline.complete') {
-        dispatch({ type: 'SSE_COMPLETE', roiSummary: frame.payload?.roi_summary ?? null });
-        es.close();
-        sseRef.current = null;
-      }
-    };
+      sseCleanupRef.current = cleanup;
+    },
+    [state.token, logout]
+  );
 
-    es.onerror = () => {
-      // SSE connection dropped mid-run — keep whatever stage we're at,
-      // fall back to timer to finish the sequence
-      es.close();
-      sseRef.current = null;
-      dispatch({ type: 'START_REVIEW' }); // switches to demo/timer mode
-    };
-  }
+  // ── Unified startReview dispatch ────────────────────────────────────
 
-  // ── startReview: try live, fall back to demo ─────────────────────────────
-  const startReview = useCallback(async () => {
-    // Close any open SSE from a previous run
-    if (sseRef.current) {
-      sseRef.current.close();
-      sseRef.current = null;
+  const startReview = useCallback(() => {
+    if (state.apiMode === 'live' && state.isAuthenticated) {
+      const data = getActiveData(state);
+      const repoPath = data.pipeline?.repo_path || './legacy-app';
+      const targetVersion = data.pipeline?.target_version || 'python3.12';
+      startLiveReview(repoPath, targetVersion);
+    } else {
+      startDemoReview();
     }
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    dispatch({ type: 'RESET' });
-
-    // Small delay to let reset render
-    await new Promise((r) => setTimeout(r, 100));
-
-    dispatch({ type: 'SET_CONNECTING' });
-
-    try {
-      const token = await acquireToken();
-      dispatch({ type: 'START_LIVE' });
-      openSSE(token);
-    } catch {
-      // Orchestrator unreachable — run the deterministic demo instead
-      tokenRef.current = null; // clear stale token
-      dispatch({ type: 'START_REVIEW' });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [state, startDemoReview, startLiveReview]);
 
   const resetReview = useCallback(() => {
-    if (sseRef.current) {
-      sseRef.current.close();
-      sseRef.current = null;
-    }
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    tokenRef.current = null;
+    if (sseCleanupRef.current) {
+      sseCleanupRef.current();
+      sseCleanupRef.current = null;
+    }
     dispatch({ type: 'RESET' });
   }, []);
 
-  // ── Demo timer: only runs in 'demo' / isPlaying mode ────────────────────
+  // ── Timer-driven stage progression (demo mode only) ─────────────────
+
   useEffect(() => {
     if (!state.isPlaying) return;
+    if (state.apiMode === 'live') return;
 
     const stageTimings = {
-      1: 1200,  // scanning
-      2: 1000,  // cve_lookup
-      3: 1500,  // refactoring
-      4: 2000,  // reviewing
-      5: 2000,  // debating
-      6: 1500,  // consensus
-      7: 1200,  // healing
+      1: 1200,
+      2: 1000,
+      3: 1500,
+      4: 2000,
+      5: 2000,
+      6: 1500,
+      7: 1200,
     };
-    const delay = stageTimings[state.workflowStageIndex] ?? 1500;
+
+    const delay = stageTimings[state.workflowStageIndex] || 1500;
 
     timerRef.current = setTimeout(() => {
       dispatch({ type: 'ADVANCE_STAGE' });
     }, delay);
 
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [state.isPlaying, state.workflowStageIndex]);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [state.isPlaying, state.workflowStageIndex, state.apiMode]);
 
-  // ── Demo timeline reveal: only in demo mode ──────────────────────────────
+  // ── Reveal timeline events progressively (demo mode only) ───────────
+
   useEffect(() => {
     if (!state.isPlaying) return;
+    if (state.apiMode === 'live') return;
 
-    const totalEvents = state.mockData.event_timeline.length;
+    const data = state.apiMode === 'live' && state.liveData ? state.liveData : state.mockData;
+    const totalEvents = data.event_timeline?.length || 0;
     const stageCount = WORKFLOW_STAGES.length - 1;
     const eventsPerStage = Math.ceil(totalEvents / stageCount);
     const targetRevealIndex = Math.min(
@@ -431,10 +577,17 @@ export function ReviewProvider({ children }) {
       };
       revealNext();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.workflowStageIndex, state.isPlaying]); // intentional: staggered inner setTimeout owns timelineRevealIndex progression
+  }, [
+    state.workflowStageIndex,
+    state.isPlaying,
+    state.apiMode,
+    state.timelineRevealIndex,
+    state.liveData,
+    state.mockData,
+  ]);
 
-  // ── Progress tick (both modes) ───────────────────────────────────────────
+  // ── Progress tick ───────────────────────────────────────────────────
+
   useEffect(() => {
     const stageCount = WORKFLOW_STAGES.length - 1;
     const targetProgress = Math.round((state.workflowStageIndex / stageCount) * 100);
@@ -447,13 +600,26 @@ export function ReviewProvider({ children }) {
     }
   }, [state.workflowStageIndex, state.animationProgress]);
 
+  // ── Cleanup SSE on unmount ──────────────────────────────────────────
+
+  useEffect(() => {
+    return () => {
+      if (sseCleanupRef.current) {
+        sseCleanupRef.current();
+      }
+    };
+  }, []);
+
   const value = {
     state,
     dispatch,
     startReview,
     resetReview,
+    login,
+    logout,
     currentStage: WORKFLOW_STAGES[state.workflowStageIndex],
     stages: WORKFLOW_STAGES,
+    getActiveData: () => getActiveData(state),
   };
 
   return <ReviewContext.Provider value={value}>{children}</ReviewContext.Provider>;

@@ -54,16 +54,20 @@ const STAGE_STATUS_TEXT = {
 };
 
 export default function DiffViewer() {
-  const { state, dispatch, currentStage } = useReview();
+  const { state, dispatch, currentStage, getActiveData } = useReview();
+  const data = getActiveData();
   const vulnId = state.selectedVulnerabilityId;
   const diffLines = state.diffsByVulnerability[vulnId] || [];
-  const lineExplanations = state.mockData.lineExplanations?.[vulnId] || {};
+  const lineExplanations = useMemo(
+    () => data.lineExplanations?.[vulnId] || {},
+    [data.lineExplanations, vulnId]
+  );
 
-  const refactor = state.mockData.refactors.find(
+  const refactor = (data.refactors || []).find(
     (r) => r.vulnerabilityId === vulnId
   );
 
-  const vuln = state.mockData.vulnerabilities.find((v) => v.id === vulnId);
+  const vuln = (data.vulnerabilities || []).find((v) => v.id === vulnId);
 
   const hasExplanation = useMemo(() => {
     const keys = new Set(Object.keys(lineExplanations).map(Number));

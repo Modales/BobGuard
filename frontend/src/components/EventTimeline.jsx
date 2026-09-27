@@ -14,8 +14,13 @@ const TOPIC_ICONS = {
 };
 
 export default function EventTimeline() {
-  const { state } = useReview();
-  const { event_timeline } = state.mockData;
+  const { state, getActiveData } = useReview();
+  const data = getActiveData();
+
+  // In live mode during SSE streaming, use sseEvents; otherwise use the data's event_timeline
+  const event_timeline = (state.apiMode === 'live' && state.sseEvents.length > 0)
+    ? state.sseEvents
+    : (data.event_timeline || []);
   const revealIndex = state.timelineRevealIndex;
   const hasEvents = revealIndex >= 0;
 
