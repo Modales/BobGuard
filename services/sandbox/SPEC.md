@@ -95,7 +95,37 @@ What the orchestrator relies on:
 
 ### `GET /health`
 
-Returns `{"status": "ok"}`. Used for "is it up?" checks.
+Returns `{"status": "ok"}` plus two additive capability fields:
+
+```json
+{ "status": "ok", "gnu_time": true, "memory_limit": true }
+```
+
+| Field | Meaning |
+| --- | --- |
+| `gnu_time` | `true` if a GNU `time` binary (`/usr/bin/time` or `gtime`) was found at startup |
+| `memory_limit` | `true` if `bash -c 'ulimit -v 262144'` succeeded at startup |
+
+Both probes run once when the server starts.  On platforms where GNU time is
+absent, `peak_memory_kb` is always `0`.  On platforms where `ulimit -v` is not
+supported, Python runs are launched without the memory cap.
+
+### `GET /metrics`
+
+Returns Prometheus text format metrics with HTTP 200.  No external dependency —
+the text is written directly.  If the database is down, returns the `HELP`/`TYPE`
+headers with no data lines (still HTTP 200).
+
+```
+# HELP sandbox_runs_total Total sandbox runs by language and status.
+# TYPE sandbox_runs_total counter
+sandbox_runs_total{language="python",status="passed"} 4
+sandbox_runs_total{language="javascript",status="failed"} 1
+# HELP sandbox_run_duration_ms Summary of sandbox run durations in milliseconds.
+# TYPE sandbox_run_duration_ms summary
+sandbox_run_duration_ms_count 5
+sandbox_run_duration_ms_sum 2341
+```
 
 ### `GET /runs?limit=20`
 
@@ -132,10 +162,23 @@ under the orchestrator's 10-second limit.
 | Limit | Python | JavaScript |
 | --- | --- | --- |
 | Time | Kill after 5 seconds | Same |
-| Memory | `ulimit -v 262144` (256 MB) | **No `ulimit -v`** (see trap 1). Use `node --max-old-space-size=256` plus the container's memory limit |
+| Memory | `ulimit -v 262144` (256 MB) when supported (see cross-platform guard in §1 API) | **No `ulimit -v`** (see trap 1). Use `node --max-old-space-size=256` plus the container's memory limit |
 | Processes | Docker's `--pids-limit` stops "fork bombs" (code that copies itself until the machine freezes). **Don't use `ulimit -u`** (see trap 6) | Same |
 | Environment | Clean: only `PATH`, `HOME` (the temp folder) and `LANG`. Never pass database settings or other secrets | Same |
 | User | A non-root user inside the container | Same |
+
+### Cross-platform notes
+
+- **GNU time detection.** At startup the server tries `/usr/bin/time --version`
+  then `gtime --version`.  If either prints output containing `"gnu"` it is used
+  to wrap every child command.  Otherwise `peak_memory_kb` is always `0`.
+- **`ulimit -v` detection.** At startup the server runs
+  `bash -c 'ulimit -v 262144'`. If that exits 0, the Python wrapper includes
+  the limit; otherwise it is omitted so Python still runs on macOS and other
+  platforms where the syscall is not available.
+- **Quoting.** The Python `bash -c` wrapper uses `shlex.quote()` for the Python
+  executable path and the JUnit XML path, so paths containing spaces work
+  correctly.  The JavaScript commands use argument lists and do not need this.
 
 ### Known traps
 
@@ -245,7 +288,7 @@ Import `postman/sandbox.postman_collection.json` into Postman and click
 5. Python with pytest tests (2 pass, 1 fail) → `tests_total: 3`, `tests_failed: 1`
 6. The demo's `auth.py`, exactly as the orchestrator sends it → `passed: true`
 7. JavaScript that works → `passed: true`
-8. JavaScript with Jest tests (1 pass, 1 fail) → `passed: false`, `tests_failed: 1`
+8. JavaScript with Jest tests (1 pass, 1 fail) → `passed: false`, `tests_failed: 1`, traceback has a line starting `AssertionError:`
 9. JavaScript infinite loop → `status: "timeout"`
 10. JavaScript memory hog → `passed: false`
 11. `GET /runs` shows the runs above
@@ -256,6 +299,8 @@ Import `postman/sandbox.postman_collection.json` into Postman and click
     - a syntax error in `services/orchestrator/cross_language_parser.py`, line 113
       (four `"` in a row)
     - `python-multipart` missing from `services/orchestrator/requirements.txt`
+13. `GET /metrics` → HTTP 200, body contains `sandbox_runs_total`
+14. JavaScript `TypeError` crash → `passed: false`, traceback has a line starting `TypeError:`
 
 ## 7. Open questions for modales
 

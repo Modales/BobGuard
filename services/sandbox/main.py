@@ -3,6 +3,7 @@
 POST /run-tests  — execute untrusted code in a locked temp folder.
 GET  /health     — liveness probe.
 GET  /runs       — recent runs from the database.
+GET  /metrics    — Prometheus text metrics.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -24,6 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, func, text
 from sqlalchemy.orm import DeclarativeBase, Session
@@ -116,15 +119,64 @@ def _save_run(row_data: dict) -> Optional[int]:
 
 app = FastAPI(title="IBM Bob Sandbox", version="0.1.0")
 
+# ---------------------------------------------------------------------------
+# Cross-platform capability probes (run once at startup)
+# ---------------------------------------------------------------------------
+
+def _probe_gnu_time() -> Optional[str]:
+    """Return the path to GNU time if available, else None."""
+    for candidate in ("/usr/bin/time", "gtime"):
+        try:
+            result = subprocess.run(
+                [candidate, "--version"],
+                capture_output=True, text=True, timeout=5,
+            )
+            # GNU time prints version info to stderr
+            combined = (result.stdout + result.stderr).lower()
+            if "gnu" in combined:
+                return candidate
+        except Exception:
+            pass
+    return None
+
+
+def _probe_ulimit_v() -> bool:
+    """Return True if 'ulimit -v 262144' is accepted by bash."""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", "ulimit -v 262144"],
+            capture_output=True, timeout=5,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+# Probe results cached at module level; populated at startup.
+_GNU_TIME_BIN: Optional[str] = None   # path to GNU time, or None
+_ULIMIT_V_OK: bool = False             # whether ulimit -v works
+
 
 @app.on_event("startup")
 def _startup() -> None:
+    global _GNU_TIME_BIN, _ULIMIT_V_OK
     _get_engine()
+    _GNU_TIME_BIN = _probe_gnu_time()
+    _ULIMIT_V_OK = _probe_ulimit_v()
+    logger.info(
+        "Capability probes: gnu_time=%s ulimit_v=%s",
+        _GNU_TIME_BIN or "disabled",
+        _ULIMIT_V_OK,
+    )
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "gnu_time": _GNU_TIME_BIN is not None,
+        "memory_limit": _ULIMIT_V_OK,
+    }
 
 
 @app.get("/runs")
@@ -164,6 +216,61 @@ def get_runs(limit: int = 20):
     except Exception as exc:
         logger.warning("DB read failed: %s", exc)
         return []
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def get_metrics() -> str:
+    """Prometheus text format metrics — no external dependency.
+
+    Exposes:
+      sandbox_runs_total{language, status}  — counter per (language, status)
+      sandbox_run_duration_ms_count         — total number of finished runs
+      sandbox_run_duration_ms_sum           — sum of duration_ms across all runs
+    """
+    engine = _get_engine()
+    lines: list[str] = []
+
+    lines.append("# HELP sandbox_runs_total Total sandbox runs by language and status.")
+    lines.append("# TYPE sandbox_runs_total counter")
+    lines.append("# HELP sandbox_run_duration_ms Summary of sandbox run durations in milliseconds.")
+    lines.append("# TYPE sandbox_run_duration_ms summary")
+
+    try:
+        if engine is None:
+            raise RuntimeError("no engine")
+        with Session(engine) as session:
+            # Aggregate counts per (language, status).
+            rows = (
+                session.query(
+                    SandboxRun.language,
+                    SandboxRun.status,
+                    func.count(SandboxRun.id).label("cnt"),
+                )
+                .group_by(SandboxRun.language, SandboxRun.status)
+                .all()
+            )
+            for row in rows:
+                lang = row.language or "unknown"
+                status = row.status or "unknown"
+                lines.append(
+                    f'sandbox_runs_total{{language="{lang}",status="{status}"}} {row.cnt}'
+                )
+
+            # Duration summary aggregates.
+            agg = session.query(
+                func.count(SandboxRun.id).label("cnt"),
+                func.sum(SandboxRun.duration_ms).label("total_ms"),
+            ).one()
+            count_val = agg.cnt or 0
+            sum_val = agg.total_ms or 0
+            lines.append(f"sandbox_run_duration_ms_count {count_val}")
+            lines.append(f"sandbox_run_duration_ms_sum {sum_val}")
+    except Exception as exc:
+        logger.warning("Metrics DB query failed: %s", exc)
+        # Return valid (empty) metrics page rather than an error.
+
+    lines.append("")  # trailing newline
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -238,8 +345,10 @@ _JEST_BIN = os.path.join(_JS_RUNNER_DIR, "node_modules", ".bin", "jest")
 
 
 def _wrap_with_gnu_time(inner_cmd: list[str], peak_file: str) -> list[str]:
-    """Wrap a command list with /usr/bin/time so we can read peak RSS."""
-    return ["/usr/bin/time", "-f", "%M", "-o", peak_file] + inner_cmd
+    """Wrap a command list with GNU time if available; otherwise return as-is."""
+    if _GNU_TIME_BIN:
+        return [_GNU_TIME_BIN, "-f", "%M", "-o", peak_file] + inner_cmd
+    return inner_cmd
 
 
 def _read_peak_kb(peak_file: str) -> int:
@@ -260,17 +369,29 @@ def _read_peak_kb(peak_file: str) -> int:
 
 
 def _build_python_command(workdir: str, has_tests: bool, has_test_file: bool = False) -> list[str]:
-    """Return the argv list for the Python run (without the GNU time wrapper)."""
+    """Return the argv list for the Python run (without the GNU time wrapper).
+
+    Uses shlex.quote() for every value inserted into the bash -c string so
+    paths with spaces don't break the command (GitHub issue #6, item 2).
+    Only adds 'ulimit -v 262144' when the startup probe confirmed it works.
+    """
+    exe_q = shlex.quote(_PYTHON_EXE)
+    ulimit_prefix = "ulimit -v 262144; " if _ULIMIT_V_OK else ""
     if has_tests:
         junit_path = os.path.join(workdir, "report.xml")
-        files = "submission.py test_submission.py" if has_test_file else "submission.py"
-        inner = (
-            f"ulimit -v 262144; "
-            f"exec {_PYTHON_EXE} -m pytest -q --tb=native "
-            f"--junitxml={junit_path} {files}"
-        )
+        junit_q = shlex.quote(junit_path)
+        if has_test_file:
+            inner = (
+                f"{ulimit_prefix}exec {exe_q} -m pytest -q --tb=native "
+                f"--junitxml={junit_q} submission.py test_submission.py"
+            )
+        else:
+            inner = (
+                f"{ulimit_prefix}exec {exe_q} -m pytest -q --tb=native "
+                f"--junitxml={junit_q} submission.py"
+            )
     else:
-        inner = f"ulimit -v 262144; exec {_PYTHON_EXE} submission.py"
+        inner = f"{ulimit_prefix}exec {exe_q} submission.py"
     return ["bash", "-c", inner]
 
 
@@ -305,8 +426,8 @@ def _run_subprocess(
     """
     Run cmd in workdir with a 5-second timeout, killing the full process group.
 
-    Every command is wrapped with /usr/bin/time to measure peak RSS accurately
-    (SPEC trap 4 — os.wait4 ru_maxrss includes the server's own memory).
+    When GNU time is available, wraps the command to measure peak RSS accurately
+    (SPEC trap 4). When unavailable, peak_memory_kb is reported as 0.
 
     Returns (exit_code, stdout, stderr, duration_ms, peak_memory_kb, timed_out).
     """
@@ -374,7 +495,9 @@ def _run_subprocess(
         exit_code = proc.returncode or -1
 
     # Read peak RSS from GNU time output file (SPEC trap 4).
-    peak_kb = _read_peak_kb(peak_file)
+    # If GNU time was not available, _wrap_with_gnu_time returned the command
+    # unchanged and peak.txt was never written, so _read_peak_kb returns 0.
+    peak_kb = _read_peak_kb(peak_file) if _GNU_TIME_BIN else 0
 
     stdout = stdout_buf[0].decode(errors="replace")[:_MAX_OUTPUT_BYTES]
     stderr = stderr_buf[0].decode(errors="replace")[:_MAX_OUTPUT_BYTES]
@@ -408,11 +531,81 @@ def _parse_junit(xml_path: str) -> tuple[int, int, int]:
 # Jest JSON parsing (JavaScript)
 # ---------------------------------------------------------------------------
 
+# Strips ANSI colour escape sequences from a string.
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_ESCAPE_RE.sub("", text)
+
+
+# Matches a JS error name at the START of a line (column 0), e.g.:
+#   TypeError: cannot read properties of undefined
+#   Error: expect(received).toBe(expected)
+#   AssertionError: …
+_JS_ERROR_AT_COL0_RE = re.compile(
+    r"^([A-Za-z_][\w.]*Error[^\n]*)", re.MULTILINE
+)
+
+
+def _jest_traceback_from_message(msg: str) -> str:
+    """Convert a single Jest failureMessage into a healing-loop-compatible traceback.
+
+    The orchestrator's _TB_ERROR_RE only recognises lines that START at column 0
+    and whose name ends with Error/Exception/etc.  Jest's failureMessages already
+    contain such lines for named errors (TypeError, ReferenceError, …), but for
+    a plain expect() failure Jest produces lines like:
+
+        Error: expect(received).toBe(expected)
+
+    which IS column-0 but has a bare "Error" name that _TB_ERROR_RE skips because
+    its pattern requires at least one word-char prefix before "Error".
+
+    Strategy:
+    1. Strip ANSI colour codes.
+    2. Keep the message as-is (it may already have a good error line).
+    3. If the message does NOT already end with a column-0 error line matching
+       _TB_ERROR_RE, append one:
+       - If the first column-0 "…Error: …" line exists, use it.
+       - Otherwise synthesise "AssertionError: <first line of message>".
+    """
+    # _TB_ERROR_RE from self_healing_loop.py — must match what the orchestrator uses.
+    _orch_re = re.compile(
+        r"^([A-Za-z_][\w\.]*(?:Error|Exception|Exit|Warning|Interrupt))\b",
+        re.MULTILINE,
+    )
+
+    clean = _strip_ansi(msg).rstrip()
+
+    # Check whether the last non-empty line already satisfies _TB_ERROR_RE.
+    lines = clean.splitlines()
+    last_non_empty = next((l for l in reversed(lines) if l.strip()), "")
+    if _orch_re.match(last_non_empty):
+        return clean
+
+    # Find the first column-0 JS error line in the message.
+    col0_match = _JS_ERROR_AT_COL0_RE.search(clean)
+    if col0_match:
+        return clean + "\n" + col0_match.group(1)
+
+    # Synthesise an AssertionError from the first line of the message.
+    first_line = lines[0].strip() if lines else "test failed"
+    # Jest often starts failure messages with a bare "Error: " prefix that is
+    # not a named error type; strip it so we get a clean message.
+    first_line = re.sub(r"^Error:\s*", "", first_line)
+    # Truncate to avoid absurdly long single lines.
+    if len(first_line) > 200:
+        first_line = first_line[:200] + "…"
+    return clean + "\nAssertionError: " + first_line
+
+
 def _parse_jest_json(stdout: str) -> tuple[int, int, int, Optional[str]]:
     """Parse Jest's --json output.
 
     Returns (tests_total, tests_passed, tests_failed, traceback).
-    The traceback is built from failing test assertion messages.
+    The traceback is built from failing test assertion messages and is
+    guaranteed to end with a column-0 line recognised by the orchestrator's
+    _TB_ERROR_RE (e.g. "TypeError: …" or "AssertionError: …").
     """
     # Jest --json prints the JSON result to stdout.  Find the JSON object.
     # Sometimes there's extra non-JSON text before it (e.g. from console.log).
@@ -445,11 +638,12 @@ def _parse_jest_json(stdout: str) -> tuple[int, int, int, Optional[str]]:
     # Collect failure messages for the traceback.
     messages: list[str] = []
     for suite in data.get("testResults", []):
-        for result in suite.get("testResults", []):
+        for result in suite.get("assertionResults", []):
             if result.get("status") == "failed":
                 title = result.get("fullName") or result.get("title", "")
                 for msg in result.get("failureMessages", []):
-                    messages.append(f"FAIL {title}\n{msg}")
+                    tb_block = _jest_traceback_from_message(msg)
+                    messages.append(f"FAIL {title}\n{tb_block}")
 
     traceback = "\n\n".join(messages) if messages else None
     return total, passed, failed, traceback
@@ -575,6 +769,10 @@ def run_tests(req: RunRequest) -> RunResponse:
         # For Jest runs use the structured failure messages as the traceback.
         if language == "javascript" and jest_traceback and not timed_out:
             traceback = jest_traceback
+        # For plain node crashes, ensure the traceback ends with a column-0
+        # error line so the orchestrator's _TB_ERROR_RE can parse it.
+        elif language == "javascript" and not has_tests and traceback and not timed_out:
+            traceback = _jest_traceback_from_message(traceback)
 
         run_id = _save_run(
             dict(
